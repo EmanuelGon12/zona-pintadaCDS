@@ -1,0 +1,6 @@
+{
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "frontend",
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }]
+}
