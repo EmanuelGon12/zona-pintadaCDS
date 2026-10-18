@@ -13,7 +13,7 @@ class RegistrationRequest(BaseModel):
 
     @field_validator("full_name")
     @classmethod
-    def strip_name(cls, value: str) -> str:
+    def limpiar_nombre(cls, value: str) -> str:
         return value.strip()
 
 
@@ -50,12 +50,12 @@ class ProductWrite(BaseModel):
 
     @field_validator("name", "colorway", "description")
     @classmethod
-    def strip_text(cls, value: str) -> str:
+    def limpiar_texto(cls, value: str) -> str:
         return value.strip()
 
     @field_validator("available_sizes")
     @classmethod
-    def normalize_sizes(cls, sizes: List[str]) -> List[str]:
+    def normalizar_tallas(cls, sizes: List[str]) -> List[str]:
         cleaned = list(dict.fromkeys(size.strip() for size in sizes if size.strip()))
         if not cleaned:
             raise ValueError("Indica al menos una talla")

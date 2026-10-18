@@ -4,16 +4,17 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.database import get_database_session
+from app.database import obtener_sesion_db
 from app.models import Role, User
-from app.security import read_user_id_from_token
+from app.security import leer_usuario_del_token
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_user(
+# se usa como Depends en todo lo que necesita login
+def usuario_actual(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    database: Session = Depends(get_database_session),
+    database: Session = Depends(obtener_sesion_db),
 ) -> User:
     unauthorized = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -22,7 +23,7 @@ def get_current_user(
     )
     if credentials is None:
         raise unauthorized
-    user_id = read_user_id_from_token(credentials.credentials)
+    user_id = leer_usuario_del_token(credentials.credentials)
     if user_id is None:
         raise unauthorized
     user = database.get(User, user_id)
@@ -31,7 +32,7 @@ def get_current_user(
     return user
 
 
-def require_admin(user: User = Depends(get_current_user)) -> User:
+def requerir_admin(user: User = Depends(usuario_actual)) -> User:
     if user.role != Role.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tienes permisos para esta sección.")
     return user

@@ -2,26 +2,26 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
-from app.database import get_database_session
-from app.dependencies import get_current_user
+from app.config import obtener_config
+from app.database import obtener_sesion_db
+from app.dependencies import usuario_actual
 from app.models import CartItem, Product, User
 from app.schemas import CartItemCreate, CartItemUpdate, CartOut
-from app.services.orders import load_cart_items
-from app.services.presenters import present_cart
+from app.services.orders import items_del_carrito
+from app.services.presenters import presentar_carrito
 
 router = APIRouter(prefix="/api/cart", tags=["Carrito"])
 
 
-def ensure_product_can_be_added(product: Product, size: str, requested_quantity: int) -> None:
+def validar_producto_para_carrito(product: Product, size: str, requested_quantity: int) -> None:
     if not product.is_active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No encontramos ese producto.")
     if size not in product.available_sizes:
         raise HTTPException(422, "Esa talla no está disponible para este modelo.")
-    if requested_quantity > get_settings().max_units_per_line:
+    if requested_quantity > obtener_config().max_units_per_line:
         raise HTTPException(
             422,
-            f"Puedes llevar hasta {get_settings().max_units_per_line} unidades por talla.",
+            f"Puedes llevar hasta {obtener_config().max_units_per_line} unidades por talla.",
         )
     if requested_quantity > product.stock:
         raise HTTPException(
@@ -30,7 +30,7 @@ def ensure_product_can_be_added(product: Product, size: str, requested_quantity:
         )
 
 
-def find_owned_item(database: Session, user: User, item_id: int) -> CartItem:
+def buscar_item_propio(database: Session, user: User, item_id: int) -> CartItem:
     item = database.get(CartItem, item_id)
     if item is None or item.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Ese producto no está en tu carrito.")
@@ -38,15 +38,15 @@ def find_owned_item(database: Session, user: User, item_id: int) -> CartItem:
 
 
 @router.get("", response_model=CartOut)
-def view_cart(user: User = Depends(get_current_user), database: Session = Depends(get_database_session)):
-    return present_cart(load_cart_items(database, user))
+def ver_carrito(user: User = Depends(usuario_actual), database: Session = Depends(obtener_sesion_db)):
+    return presentar_carrito(items_del_carrito(database, user))
 
 
 @router.post("/items", response_model=CartOut, status_code=status.HTTP_201_CREATED)
-def add_item(
+def agregar_item(
     request: CartItemCreate,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
 ):
     product = database.get(Product, request.product_id)
     if product is None:
@@ -57,37 +57,38 @@ def add_item(
             CartItem.user_id == user.id, CartItem.product_id == product.id, CartItem.size == request.size
         )
     )
+    # si ya tenia ese talle en el carrito sumo, y valido el total contra el stock
     resulting_quantity = request.quantity + (existing_item.quantity if existing_item else 0)
-    ensure_product_can_be_added(product, request.size, resulting_quantity)
+    validar_producto_para_carrito(product, request.size, resulting_quantity)
 
     if existing_item:
         existing_item.quantity = resulting_quantity
     else:
         database.add(CartItem(user_id=user.id, product_id=product.id, size=request.size, quantity=request.quantity))
     database.commit()
-    return present_cart(load_cart_items(database, user))
+    return presentar_carrito(items_del_carrito(database, user))
 
 
 @router.patch("/items/{item_id}", response_model=CartOut)
-def change_item_quantity(
+def cambiar_cantidad(
     item_id: int,
     request: CartItemUpdate,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
 ):
-    item = find_owned_item(database, user, item_id)
-    ensure_product_can_be_added(item.product, item.size, request.quantity)
+    item = buscar_item_propio(database, user, item_id)
+    validar_producto_para_carrito(item.product, item.size, request.quantity)
     item.quantity = request.quantity
     database.commit()
-    return present_cart(load_cart_items(database, user))
+    return presentar_carrito(items_del_carrito(database, user))
 
 
 @router.delete("/items/{item_id}", response_model=CartOut)
-def remove_item(
+def quitar_item(
     item_id: int,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
 ):
-    database.delete(find_owned_item(database, user, item_id))
+    database.delete(buscar_item_propio(database, user, item_id))
     database.commit()
-    return present_cart(load_cart_items(database, user))
+    return presentar_carrito(items_del_carrito(database, user))

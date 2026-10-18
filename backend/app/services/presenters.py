@@ -1,31 +1,32 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from app.models import CartItem, Order, OrderItem, Product, current_utc_time
+from app.models import CartItem, Order, OrderItem, Product, ahora_utc
 from app.schemas import CartLineOut, CartOut, OrderItemOut, OrderOut, ProductOut
-from app.services.pricing import calculate_totals
-from app.storage import get_storage, is_external_image
-from app.config import get_settings
+from app.services.pricing import calcular_totales
+from app.storage import obtener_storage, es_imagen_externa
+from app.config import obtener_config
 
 
-def image_url_for(image_key: Optional[str]) -> Optional[str]:
+def url_de_imagen(image_key: Optional[str]) -> Optional[str]:
     if not image_key:
         return None
-    return image_key if is_external_image(image_key) else get_storage().public_url(image_key)
+    return image_key if es_imagen_externa(image_key) else obtener_storage().url_publica(image_key)
 
 
 NEW_ARRIVAL_WINDOW = timedelta(days=30)
 
 
-def as_utc(moment: datetime) -> datetime:
+# sqlite devuelve las fechas sin zona horaria, postgres no. Asi quedan iguales
+def en_utc(moment: datetime) -> datetime:
     return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
 
 
-def is_new_arrival(product: Product) -> bool:
-    return current_utc_time() - as_utc(product.created_at) <= NEW_ARRIVAL_WINDOW
+def es_novedad(product: Product) -> bool:
+    return ahora_utc() - en_utc(product.created_at) <= NEW_ARRIVAL_WINDOW
 
 
-def present_product(product: Product) -> ProductOut:
+def presentar_producto(product: Product) -> ProductOut:
     return ProductOut(
         id=product.id,
         name=product.name,
@@ -34,16 +35,16 @@ def present_product(product: Product) -> ProductOut:
         price_cents=product.price_cents,
         stock=product.stock,
         available_sizes=list(product.available_sizes),
-        image_url=image_url_for(product.image_key),
+        image_url=url_de_imagen(product.image_key),
         play_style=product.play_style,
         surface=product.surface,
-        is_new=is_new_arrival(product),
-        created_at=as_utc(product.created_at),
+        is_new=es_novedad(product),
+        created_at=en_utc(product.created_at),
         is_active=product.is_active,
     )
 
 
-def describe_cart_item_problem(item: CartItem) -> Optional[str]:
+def problema_del_item(item: CartItem) -> Optional[str]:
     product = item.product
     if not product.is_active:
         return "Este producto ya no está disponible."
@@ -56,15 +57,15 @@ def describe_cart_item_problem(item: CartItem) -> Optional[str]:
     return None
 
 
-def present_cart(items: List[CartItem]) -> CartOut:
-    settings = get_settings()
+def presentar_carrito(items: List[CartItem]) -> CartOut:
+    settings = obtener_config()
     lines = []
     for item in items:
-        problem = describe_cart_item_problem(item)
+        problem = problema_del_item(item)
         lines.append(
             CartLineOut(
                 id=item.id,
-                product=present_product(item.product),
+                product=presentar_producto(item.product),
                 size=item.size,
                 quantity=item.quantity,
                 unit_price_cents=item.product.price_cents,
@@ -73,7 +74,7 @@ def present_cart(items: List[CartItem]) -> CartOut:
                 problem=problem,
             )
         )
-    totals = calculate_totals(((line.unit_price_cents, line.quantity) for line in lines), settings)
+    totals = calcular_totales(((line.unit_price_cents, line.quantity) for line in lines), settings)
     return CartOut(
         lines=lines,
         item_count=sum(line.quantity for line in lines),
@@ -85,11 +86,11 @@ def present_cart(items: List[CartItem]) -> CartOut:
     )
 
 
-def present_order_item(item: OrderItem) -> OrderItemOut:
+def presentar_item_orden(item: OrderItem) -> OrderItemOut:
     return OrderItemOut(
         product_id=item.product_id,
         product_name=item.product_name,
-        image_url=image_url_for(item.image_key),
+        image_url=url_de_imagen(item.image_key),
         size=item.size,
         quantity=item.quantity,
         unit_price_cents=item.unit_price_cents,
@@ -97,7 +98,7 @@ def present_order_item(item: OrderItem) -> OrderItemOut:
     )
 
 
-def present_order(order: Order) -> OrderOut:
+def presentar_orden(order: Order) -> OrderOut:
     return OrderOut(
         id=order.id,
         status=order.status,
@@ -106,5 +107,5 @@ def present_order(order: Order) -> OrderOut:
         total_cents=order.total_cents,
         created_at=order.created_at,
         paid_at=order.paid_at,
-        items=[present_order_item(item) for item in order.items],
+        items=[presentar_item_orden(item) for item in order.items],
     )

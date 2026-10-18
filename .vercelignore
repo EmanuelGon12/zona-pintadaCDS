@@ -1,5 +1,4 @@
 backend/.venv
 backend/data
 backend/tests
-.claude
 frontend/node_modules

@@ -4,7 +4,7 @@ from typing import Optional, Protocol
 
 import stripe
 
-from app.config import Settings, get_settings
+from app.config import Settings, obtener_config
 from app.models import Order
 
 
@@ -19,16 +19,16 @@ class PaymentSession:
 
 
 class PaymentGateway(Protocol):
-    def open_session(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession: ...
+    def abrir_sesion(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession: ...
 
-    def is_paid(self, order: Order) -> bool: ...
+    def esta_pagada(self, order: Order) -> bool: ...
 
 
 class StripeGateway:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    def open_session(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession:
+    def abrir_sesion(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession:
         line_items = [
             {
                 "quantity": item.quantity,
@@ -65,7 +65,7 @@ class StripeGateway:
             raise PaymentProviderError(str(error)) from error
         return PaymentSession(session_id=session.id, checkout_url=session.url)
 
-    def is_paid(self, order: Order) -> bool:
+    def esta_pagada(self, order: Order) -> bool:
         if not order.payment_session_id:
             return False
         try:
@@ -79,24 +79,24 @@ class SimulatedGateway:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    def open_session(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession:
+    def abrir_sesion(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession:
         session_id = f"sim_{order.id}"
         return PaymentSession(
             session_id=session_id,
-            checkout_url=f"/pago-simulado/{order.id}",
+            checkout_url='/pago-simulado/' + str(order.id),  # ruta del front, no hace falta la url completa
         )
 
-    def is_paid(self, order: Order) -> bool:
+    def esta_pagada(self, order: Order) -> bool:
         return order.status.value == "PAID"
 
 
-def get_payment_gateway() -> PaymentGateway:
-    settings = get_settings()
-    return StripeGateway(settings) if settings.uses_stripe else SimulatedGateway(settings)
+def obtener_pasarela() -> PaymentGateway:
+    settings = obtener_config()
+    return StripeGateway(settings) if settings.usa_stripe else SimulatedGateway(settings)
 
 
-def read_stripe_event(payload: bytes, signature_header: Optional[str]):
-    settings = get_settings()
+def leer_evento_stripe(payload: bytes, signature_header: Optional[str]):
+    settings = obtener_config()
     if not settings.stripe_webhook_secret:
         raise PaymentProviderError("Webhook de Stripe sin configurar")
     try:

@@ -1,28 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
-from app.database import get_database_session
-from app.dependencies import get_current_user
+from app.config import obtener_config
+from app.database import obtener_sesion_db
+from app.dependencies import usuario_actual
 from app.models import Order, OrderStatus, User
 from app.schemas import CheckoutOut, OrderOut, SimulatedPaymentRequest
 from app.services.orders import (
-    cancel_order,
-    cancel_stale_pending_orders,
-    create_pending_order,
-    load_cart_items,
-    mark_order_paid,
+    cancelar_orden,
+    cancelar_ordenes_pendientes,
+    crear_orden_pendiente,
+    items_del_carrito,
+    marcar_orden_pagada,
 )
-from app.services.payments import PaymentGateway, PaymentProviderError, get_payment_gateway, read_stripe_event
-from app.services.presenters import describe_cart_item_problem, present_order
+from app.services.payments import PaymentGateway, PaymentProviderError, obtener_pasarela, leer_evento_stripe
+from app.services.presenters import problema_del_item, presentar_orden
 
 router = APIRouter(prefix="/api/checkout", tags=["Checkout"])
 
+# mismas tarjetas de prueba que usa stripe, para que el simulador se sienta igual
 APPROVED_TEST_CARD = "4242424242424242"
 DECLINED_TEST_CARD = "4000000000000002"
 
 
-def find_owned_order(database: Session, user: User, order_id: int) -> Order:
+def buscar_orden_propia(database: Session, user: User, order_id: int) -> Order:
     order = database.get(Order, order_id)
     if order is None or order.user_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No encontramos esa orden.")
@@ -30,30 +31,32 @@ def find_owned_order(database: Session, user: User, order_id: int) -> Order:
 
 
 @router.post("/session", response_model=CheckoutOut, status_code=status.HTTP_201_CREATED)
-def start_checkout(
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
-    gateway: PaymentGateway = Depends(get_payment_gateway),
+def iniciar_checkout(
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
+    gateway: PaymentGateway = Depends(obtener_pasarela),
 ):
-    cart_items = load_cart_items(database, user)
+    cart_items = items_del_carrito(database, user)
     if not cart_items:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tu carrito está vacío.")
+    # vuelvo a validar todo aca, el carrito pudo cambiar desde que se agrego (stock, producto oculto, etc)
     for item in cart_items:
-        problem = describe_cart_item_problem(item)
+        problem = problema_del_item(item)
         if problem:
             raise HTTPException(status.HTTP_409_CONFLICT, f"{item.product.name}: {problem}")
 
-    cancel_stale_pending_orders(database, user)
-    order = create_pending_order(database, user, cart_items)
+    cancelar_ordenes_pendientes(database, user)
+    order = crear_orden_pendiente(database, user, cart_items)
 
-    base_url = get_settings().public_base_url
+    base_url = obtener_config().public_base_url
     try:
-        payment_session = gateway.open_session(
+        payment_session = gateway.abrir_sesion(
             order,
             success_url=f"{base_url}/pedidos/{order.id}?pago=exitoso&session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/carrito?pago=cancelado&orden={order.id}",
         )
     except PaymentProviderError:
+        # stripe fallo, no dejo la orden pendiente para siempre
         order.status = OrderStatus.CANCELLED
         database.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos iniciar el pago. Prueba de nuevo en unos minutos.")
@@ -64,56 +67,58 @@ def start_checkout(
 
 
 @router.post("/orders/{order_id}/confirm", response_model=OrderOut)
-def confirm_payment(
+def confirmar_pago(
     order_id: int,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
-    gateway: PaymentGateway = Depends(get_payment_gateway),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
+    gateway: PaymentGateway = Depends(obtener_pasarela),
 ):
-    order = find_owned_order(database, user, order_id)
+    order = buscar_orden_propia(database, user, order_id)
     if order.status == OrderStatus.PENDING:
         try:
-            if gateway.is_paid(order):
-                mark_order_paid(database, order)
+            if gateway.esta_pagada(order):
+                marcar_orden_pagada(database, order)
         except PaymentProviderError:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos verificar el pago todavía.")
-    return present_order(order)
+    return presentar_orden(order)
 
 
 @router.post("/orders/{order_id}/cancel", response_model=OrderOut)
-def abandon_checkout(
+def abandonar_checkout(
     order_id: int,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
 ):
-    return present_order(cancel_order(database, find_owned_order(database, user, order_id)))
+    return presentar_orden(cancelar_orden(database, buscar_orden_propia(database, user, order_id)))
 
 
 @router.post("/simulated/{order_id}/pay", response_model=OrderOut)
-def pay_with_simulated_card(
+def pagar_con_tarjeta_simulada(
     order_id: int,
     request: SimulatedPaymentRequest,
-    user: User = Depends(get_current_user),
-    database: Session = Depends(get_database_session),
+    user: User = Depends(usuario_actual),
+    database: Session = Depends(obtener_sesion_db),
 ):
-    if get_settings().uses_stripe:
+    if obtener_config().usa_stripe:  # con stripe configurado este endpoint no existe
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No encontrado.")
-    order = find_owned_order(database, user, order_id)
+    order = buscar_orden_propia(database, user, order_id)
     if order.status != OrderStatus.PENDING:
         raise HTTPException(status.HTTP_409_CONFLICT, "Esta orden ya no admite pagos.")
 
-    card_number = "".join(character for character in request.card_number if character.isdigit())
+    card_number = ''.join(c for c in request.card_number if c.isdigit())
     if card_number == DECLINED_TEST_CARD:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "El banco rechazó la tarjeta.")
     if card_number != APPROVED_TEST_CARD:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Número de tarjeta inválido.")
-    return present_order(mark_order_paid(database, order))
+    return presentar_orden(marcar_orden_pagada(database, order))
 
 
+# stripe avisa aca cuando se completa o vence un pago. Es el respaldo por si
+# el usuario cierra la pestaña antes de volver a la tienda
 @router.post("/webhook", include_in_schema=True)
-async def receive_stripe_webhook(request: Request, database: Session = Depends(get_database_session)):
+async def recibir_webhook_stripe(request: Request, database: Session = Depends(obtener_sesion_db)):
     try:
-        event = read_stripe_event(await request.body(), request.headers.get("stripe-signature"))
+        event = leer_evento_stripe(await request.body(), request.headers.get("stripe-signature"))
     except PaymentProviderError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
 
@@ -122,7 +127,7 @@ async def receive_stripe_webhook(request: Request, database: Session = Depends(g
     order = database.get(Order, int(order_id)) if order_id else None
     if order is not None:
         if event["type"] == "checkout.session.completed" and session_data.get("payment_status") == "paid":
-            mark_order_paid(database, order)
+            marcar_orden_pagada(database, order)
         elif event["type"] == "checkout.session.expired":
-            cancel_order(database, order)
+            cancelar_orden(database, order)
     return {"received": True}

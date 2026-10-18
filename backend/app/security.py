@@ -4,32 +4,32 @@ from typing import Optional
 import bcrypt
 import jwt
 
-from app.config import get_settings
-from app.models import current_utc_time
+from app.config import obtener_config
+from app.models import ahora_utc
 
 TOKEN_ALGORITHM = "HS256"
 
 
-def hash_password(plain_password: str) -> str:
+def hashear_password(plain_password: str) -> str:
     return bcrypt.hashpw(plain_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def password_matches(plain_password: str, stored_hash: str) -> bool:
-    try:
+def password_correcto(plain_password: str, stored_hash: str) -> bool:
+    try:  # si el hash guardado esta roto bcrypt tira ValueError
         return bcrypt.checkpw(plain_password.encode("utf-8"), stored_hash.encode("utf-8"))
     except ValueError:
         return False
 
 
-def create_access_token(user_id: int) -> str:
-    settings = get_settings()
-    expires_at = current_utc_time() + timedelta(minutes=settings.jwt_expiration_minutes)
+def crear_token(user_id: int) -> str:
+    settings = obtener_config()
+    expires_at = ahora_utc() + timedelta(minutes=settings.jwt_expiration_minutes)
     return jwt.encode({"sub": str(user_id), "exp": expires_at}, settings.jwt_secret, algorithm=TOKEN_ALGORITHM)
 
 
-def read_user_id_from_token(token: str) -> Optional[int]:
+def leer_usuario_del_token(token: str) -> Optional[int]:
     try:
-        payload = jwt.decode(token, get_settings().jwt_secret, algorithms=[TOKEN_ALGORITHM])
+        payload = jwt.decode(token, obtener_config().jwt_secret, algorithms=[TOKEN_ALGORITHM])
         return int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None

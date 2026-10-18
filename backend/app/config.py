@@ -43,10 +43,10 @@ class Settings(BaseSettings):
     frontend_directory: Path = PROJECT_DIRECTORY / "frontend" / "dist"
 
     @property
-    def uses_stripe(self) -> bool:
+    def usa_stripe(self) -> bool:
         return bool(self.stripe_secret_key)
 
 
 @lru_cache
-def get_settings() -> Settings:
+def obtener_config() -> Settings:
     return Settings()

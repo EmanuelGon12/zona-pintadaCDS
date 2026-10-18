@@ -9,12 +9,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from app.database import Base
 
 
-def fold_for_search(text: str) -> str:
+def normalizar_para_busqueda(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text)
     return "".join(character for character in decomposed if not unicodedata.combining(character)).lower()
 
 
-def current_utc_time() -> datetime:
+def ahora_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
@@ -49,7 +49,7 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(120))
     password_hash: Mapped[str] = mapped_column(String(100))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.CUSTOMER)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_utc_time)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_utc)
 
 
 class Product(Base):
@@ -57,24 +57,24 @@ class Product(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
-    search_key: Mapped[str] = mapped_column(String(120), index=True, default="")
+    search_key: Mapped[str] = mapped_column(String(120), index=True, default="")  # nombre sin tildes, para el buscador
     colorway: Mapped[str] = mapped_column(String(80), default="")
     description: Mapped[str] = mapped_column(Text, default="")
-    price_cents: Mapped[int] = mapped_column(Integer)
+    price_cents: Mapped[int] = mapped_column(Integer)  # todo en centavos, nada de floats con plata
     stock: Mapped[int] = mapped_column(Integer, default=0)
     available_sizes: Mapped[List[str]] = mapped_column(JSON, default=list)
     image_key: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     play_style: Mapped[PlayStyle] = mapped_column(Enum(PlayStyle), default=PlayStyle.ALL_AROUND)
     surface: Mapped[CourtSurface] = mapped_column(Enum(CourtSurface), default=CourtSurface.BOTH)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_utc_time)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_utc)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=current_utc_time, onupdate=current_utc_time
+        DateTime(timezone=True), default=ahora_utc, onupdate=ahora_utc
     )
 
     @validates("name")
-    def keep_search_key_in_sync(self, _field_name: str, name: str) -> str:
-        self.search_key = fold_for_search(name)
+    def sincronizar_clave_busqueda(self, _field_name: str, name: str) -> str:
+        self.search_key = normalizar_para_busqueda(name)
         return name
 
 
@@ -101,7 +101,7 @@ class Order(Base):
     shipping_cents: Mapped[int] = mapped_column(Integer)
     total_cents: Mapped[int] = mapped_column(Integer)
     payment_session_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=current_utc_time)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_utc)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     items: Mapped[List["OrderItem"]] = relationship(
@@ -119,6 +119,7 @@ class OrderItem(Base):
     image_key: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     size: Mapped[str] = mapped_column(String(10))
     quantity: Mapped[int] = mapped_column(Integer)
+    # copia del precio al momento de comprar, si despues cambia el precio la orden no se toca
     unit_price_cents: Mapped[int] = mapped_column(Integer)
 
     order: Mapped[Order] = relationship(back_populates="items")

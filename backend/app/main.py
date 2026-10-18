@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.config import get_settings
+from app.config import obtener_config
 from app.database import Base, engine
 from app.routers import administration, authentication, cart, catalog, checkout, orders
 
@@ -20,6 +20,8 @@ FIELD_LABELS = {
 }
 
 
+# sirve el build de react. Si la ruta no es un archivo (ej /modelos) devuelve el index.html
+# para que react router se encargue. Solo se usa en local, en vercel lo resuelve vercel.json
 class SinglePageApplication(StaticFiles):
     async def get_response(self, path, scope):
         try:
@@ -32,13 +34,14 @@ class SinglePageApplication(StaticFiles):
         return response
 
 
-def create_application() -> FastAPI:
-    settings = get_settings()
+def crear_aplicacion() -> FastAPI:
+    settings = obtener_config()
     Base.metadata.create_all(engine)
     application = FastAPI(title="Zona Pintada API", version="1.0.0")
 
     @application.exception_handler(RequestValidationError)
-    async def explain_validation_error(_request: Request, error: RequestValidationError):
+    async def explicar_error_validacion(_request: Request, error: RequestValidationError):
+        # pydantic devuelve una lista enorme, me quedo con el primer error y lo armo legible
         first_error = error.errors()[0]
         field_name = str(first_error["loc"][-1])
         label = FIELD_LABELS.get(field_name, field_name)
@@ -60,4 +63,4 @@ def create_application() -> FastAPI:
     return application
 
 
-app = create_application()
+app = crear_aplicacion()

@@ -2,21 +2,21 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
-import { CartProvider } from "./context/CartContext";
-import { SessionProvider } from "./context/SessionContext";
-import { ToastProvider } from "./context/ToastContext";
+import { ProveedorCarrito } from "./context/ContextoCarrito";
+import { ProveedorSesion } from "./context/ContextoSesion";
+import { ProveedorAvisos } from "./context/ContextoAvisos";
 import "./styles.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
-      <ToastProvider>
-        <SessionProvider>
-          <CartProvider>
+      <ProveedorAvisos>
+        <ProveedorSesion>
+          <ProveedorCarrito>
             <App />
-          </CartProvider>
-        </SessionProvider>
-      </ToastProvider>
+          </ProveedorCarrito>
+        </ProveedorSesion>
+      </ProveedorAvisos>
     </BrowserRouter>
   </StrictMode>
 );

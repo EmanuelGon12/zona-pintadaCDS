@@ -14,26 +14,26 @@ from fastapi.testclient import TestClient
 from app.database import Base, SessionFactory, engine
 from app.main import app
 from app.models import Product, Role, User
-from app.security import hash_password
+from app.security import hashear_password
 
 SNEAKER_SIZES = ["8", "9", "10"]
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
 @pytest.fixture(autouse=True)
-def clean_database():
+def limpiar_base():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
     yield
 
 
 @pytest.fixture
-def client():
+def api():
     with TestClient(app) as test_client:
         yield test_client
 
 
-def create_product(name="Alero 1", price_cents=10000, stock=5, is_active=True) -> int:
+def crear_producto(name="Alero 1", price_cents=10000, stock=5, is_active=True) -> int:
     with SessionFactory() as database:
         product = Product(
             name=name,
@@ -49,31 +49,31 @@ def create_product(name="Alero 1", price_cents=10000, stock=5, is_active=True) -
         return product.id
 
 
-def create_user(email: str, role: Role = Role.CUSTOMER, password: str = "contraseña123") -> None:
+def crear_usuario(email: str, role: Role = Role.CUSTOMER, password: str = "contraseña123") -> None:
     with SessionFactory() as database:
-        database.add(User(email=email, full_name="Usuario de prueba", password_hash=hash_password(password), role=role))
+        database.add(User(email=email, full_name="Usuario de prueba", password_hash=hashear_password(password), role=role))
         database.commit()
 
 
-def authorization_for(client: TestClient, email: str, password: str = "contraseña123") -> dict:
-    response = client.post("/api/auth/login", json={"email": email, "password": password})
+def autorizacion_para(api: TestClient, email: str, password: str = "contraseña123") -> dict:
+    response = api.post("/api/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 @pytest.fixture
-def customer_headers(client):
-    create_user("cliente@correo.com")
-    return authorization_for(client, "cliente@correo.com")
+def headers_cliente(api):
+    crear_usuario("cliente@correo.com")
+    return autorizacion_para(api, "cliente@correo.com")
 
 
 @pytest.fixture
-def other_customer_headers(client):
-    create_user("otro@correo.com")
-    return authorization_for(client, "otro@correo.com")
+def headers_otro_cliente(api):
+    crear_usuario("otro@correo.com")
+    return autorizacion_para(api, "otro@correo.com")
 
 
 @pytest.fixture
-def admin_headers(client):
-    create_user("admin@correo.com", role=Role.ADMIN)
-    return authorization_for(client, "admin@correo.com")
+def headers_admin(api):
+    crear_usuario("admin@correo.com", role=Role.ADMIN)
+    return autorizacion_para(api, "admin@correo.com")

@@ -20,7 +20,7 @@ src/api/         Cliente HTTP tipado y tipos de la API
 src/context/     Sesión, contador del carrito y avisos (React Context)
 src/components/  Encabezado, tarjetas de producto, selector por estilo, protección de rutas
 src/pages/       Una página por pantalla (catálogo, producto, carrito, pedidos, admin, etc.)
-src/hooks/       Carga de datos (`useAsync`) y cierre de sesión
+src/hooks/       Carga de datos (`useCargarDatos`) y cierre de sesión
 src/lib/         Formatos de precio y fecha, estilos de juego, armado de URLs del catálogo
 ```
 
@@ -62,9 +62,10 @@ variable `BACKEND_URL`). La documentación interactiva de la API está en <http:
 Para probar la versión compilada con un solo proceso, ejecutar `npm run build` en `frontend/`: el backend sirve
 `frontend/dist` y responde con la aplicación en cualquier ruta que no sea de la API.
 
-`python -m app.seed` es idempotente: crea el administrador y 12 modelos de ejemplo (11 activos y 1 oculto) solo si
-todavía no existen. Las fotos del seed son de Unsplash y se referencian por URL; las imágenes que se suben desde
-el panel de administración sí se guardan en el almacenamiento configurado.
+`python -m app.seed` se puede correr varias veces: crea el administrador y 12 modelos de ejemplo (11 activos y 1
+oculto) solo si todavía no existen, y después descarga las fotos de ejemplo (Unsplash) y las sube al almacenamiento
+configurado, guardando en la base solo la clave del archivo. Si una foto no se puede descargar, queda la URL original
+y se reintenta en la próxima corrida.
 
 `PUBLIC_BASE_URL` en `backend/.env` debe apuntar a la dirección donde se abre la tienda, porque se usa para armar las
 URLs de retorno de Stripe.
@@ -133,11 +134,15 @@ Supabase.
 **2. Imágenes.** En Storage crea un bucket público (por ejemplo `product-images`). Luego, en Project Settings →
 Storage → S3 Connection, copia el endpoint y la región, y genera un par de claves de acceso.
 
-**3. Cargar datos iniciales** (desde tu máquina, una sola vez):
+**3. Cargar datos iniciales** (desde tu máquina). Hay que pasarle también las variables de S3 para que las fotos
+de ejemplo se suban al bucket:
 
 ```bash
 cd backend
-DATABASE_URL="postgresql://..." ADMIN_PASSWORD="una-clave-segura" python -m app.seed
+DATABASE_URL='postgresql://...' ADMIN_PASSWORD='una-clave-segura' STORAGE_BACKEND=s3 S3_BUCKET=product-images \
+S3_ENDPOINT_URL='https://<ref>.storage.supabase.co/storage/v1/s3' S3_REGION='<región>' \
+S3_ACCESS_KEY_ID='...' S3_SECRET_ACCESS_KEY='...' \
+S3_PUBLIC_BASE_URL='https://<ref>.supabase.co/storage/v1/object/public/product-images' python -m app.seed
 ```
 
 **4. Vercel.** Importa el repositorio (la raíz del proyecto es la raíz del repo) y define estas variables de entorno:

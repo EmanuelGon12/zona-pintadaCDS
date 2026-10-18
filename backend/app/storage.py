@@ -2,19 +2,35 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Protocol
 
-from app.config import get_settings
+from app.config import obtener_config
 
 
-def is_external_image(image_key: str) -> bool:
+# los primeros bytes de cada formato, asi no dependemos de lo que diga el navegador
+FIRMAS_DE_IMAGEN = (
+    (b"\xff\xd8\xff", "image/jpeg", "jpg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png", "png"),
+)
+
+
+def detectar_tipo_imagen(content: bytes):
+    for signature, content_type, extension in FIRMAS_DE_IMAGEN:
+        if content.startswith(signature):
+            return content_type, extension
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    return None
+
+
+def es_imagen_externa(image_key: str) -> bool:
     return image_key.startswith(("http://", "https://"))
 
 
 class ObjectStorage(Protocol):
-    def save(self, key: str, content: bytes, content_type: str) -> None: ...
+    def guardar(self, key: str, content: bytes, content_type: str) -> None: ...
 
-    def delete(self, key: str) -> None: ...
+    def borrar(self, key: str) -> None: ...
 
-    def public_url(self, key: str) -> str: ...
+    def url_publica(self, key: str) -> str: ...
 
 
 class LocalDiskStorage:
@@ -22,21 +38,22 @@ class LocalDiskStorage:
         self.root_directory = root_directory
         self.root_directory.mkdir(parents=True, exist_ok=True)
 
-    def _path_for(self, key: str) -> Path:
+    def _ruta_de(self, key: str) -> Path:
+        # por las dudas, que nadie pueda escribir fuera de la carpeta con un ../
         destination = (self.root_directory / key).resolve()
         if self.root_directory.resolve() not in destination.parents:
             raise ValueError("Clave de objeto inválida")
         return destination
 
-    def save(self, key: str, content: bytes, content_type: str) -> None:
-        destination = self._path_for(key)
+    def guardar(self, key: str, content: bytes, content_type: str) -> None:
+        destination = self._ruta_de(key)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(content)
 
-    def delete(self, key: str) -> None:
-        self._path_for(key).unlink(missing_ok=True)
+    def borrar(self, key: str) -> None:
+        self._ruta_de(key).unlink(missing_ok=True)
 
-    def public_url(self, key: str) -> str:
+    def url_publica(self, key: str) -> str:
         return f"/media/{key}"
 
 
@@ -56,13 +73,14 @@ class S3Storage:
             aws_secret_access_key=secret_access_key,
         )
 
-    def save(self, key: str, content: bytes, content_type: str) -> None:
+    def guardar(self, key: str, content: bytes, content_type: str) -> None:
         self.client.put_object(Bucket=self.bucket, Key=key, Body=content, ContentType=content_type)
 
-    def delete(self, key: str) -> None:
+    def borrar(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=key)
 
-    def public_url(self, key: str) -> str:
+    def url_publica(self, key: str) -> str:
+        # si el bucket es publico (supabase) armo la url directo, si no una firmada que vence
         if self.public_base_url:
             return f"{self.public_base_url}/{key}"
         return self.client.generate_presigned_url(
@@ -73,8 +91,8 @@ class S3Storage:
 
 
 @lru_cache
-def get_storage() -> ObjectStorage:
-    settings = get_settings()
+def obtener_storage() -> ObjectStorage:
+    settings = obtener_config()
     if settings.storage_backend == "s3":
         if not settings.s3_bucket:
             raise RuntimeError("STORAGE_BACKEND=s3 requiere S3_BUCKET")

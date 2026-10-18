@@ -5,22 +5,23 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
-from app.config import get_settings
+from app.config import obtener_config
 
 
 class Base(DeclarativeBase):
     pass
 
 
-def normalize_database_url(database_url: str) -> str:
+def normalizar_url_base(database_url: str) -> str:
+    # supabase te da la url como postgresql://, pero sqlalchemy necesita saber que driver usar
     for prefix in ("postgres://", "postgresql://"):
         if database_url.startswith(prefix):
             return "postgresql+psycopg://" + database_url[len(prefix):]
     return database_url
 
 
-def build_engine(database_url: str):
-    database_url = normalize_database_url(database_url)
+def crear_engine(database_url: str):
+    database_url = normalizar_url_base(database_url)
 
     if database_url.startswith("sqlite"):
         database_file = database_url.split("sqlite:///", 1)[-1]
@@ -28,22 +29,25 @@ def build_engine(database_url: str):
             Path(database_file).parent.mkdir(parents=True, exist_ok=True)
         engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
+        # sqlite por defecto no respeta las foreign keys, hay que prenderlas a mano
         @event.listens_for(engine, "connect")
-        def enable_foreign_keys(dbapi_connection, _record):
+        def activar_claves_foraneas(dbapi_connection, _record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.close()
 
         return engine
 
+    # en vercel cada request puede ser una funcion nueva, asi que sin pool propio.
+    # El pooler de supabase ya se encarga, y prepare_threshold=None es porque pgbouncer no banca prepared statements
     return create_engine(database_url, poolclass=NullPool, connect_args={"prepare_threshold": None})
 
 
-engine = build_engine(get_settings().database_url)
+engine = crear_engine(obtener_config().database_url)
 SessionFactory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
-def get_database_session() -> Iterator[Session]:
+def obtener_sesion_db() -> Iterator[Session]:
     session = SessionFactory()
     try:
         yield session

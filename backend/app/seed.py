@@ -1,17 +1,21 @@
+import sys
+import urllib.request
 from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.config import get_settings
+from app.config import obtener_config
 from app.database import Base, SessionFactory, engine
-from app.models import CourtSurface, PlayStyle, Product, Role, User, current_utc_time
-from app.security import hash_password
+from app.models import CourtSurface, OrderItem, PlayStyle, Product, Role, User, ahora_utc
+from app.security import hashear_password
+from app.storage import detectar_tipo_imagen, es_imagen_externa, obtener_storage
 
 STANDARD_SIZES = ["7", "7.5", "8", "8.5", "9", "9.5", "10", "10.5", "11", "12", "13"]
 
 
-def photo(photo_id: str) -> str:
-    return f"https://images.unsplash.com/photo-{photo_id}?auto=format&fit=crop&w=1000&h=700&q=80"
+def foto_unsplash(photo_id: str) -> str:
+    # pido jpg fijo porque con auto=format unsplash a veces devuelve avif y eso no lo aceptamos
+    return f"https://images.unsplash.com/photo-{photo_id}?fm=jpg&fit=crop&w=1000&h=1000&q=80"
 
 
 CATALOG = [
@@ -151,8 +155,8 @@ CATALOG = [
 ]
 
 
-def ensure_administrator(database) -> None:
-    settings = get_settings()
+def crear_admin_si_falta(database):
+    settings = obtener_config()
     email = settings.admin_email.lower()
     if database.scalar(select(User).where(User.email == email)):
         return
@@ -160,16 +164,16 @@ def ensure_administrator(database) -> None:
         User(
             email=email,
             full_name=settings.admin_full_name,
-            password_hash=hash_password(settings.admin_password),
+            password_hash=hashear_password(settings.admin_password),
             role=Role.ADMIN,
         )
     )
 
 
-def ensure_catalog(database) -> None:
+def cargar_catalogo(database) -> None:
     if database.scalar(select(Product.id).limit(1)) is not None:
         return
-    now = current_utc_time()
+    now = ahora_utc()
     for entry in CATALOG:
         released_at = now - timedelta(days=entry["released_days_ago"])
         database.add(
@@ -180,7 +184,7 @@ def ensure_catalog(database) -> None:
                 price_cents=entry["price_cents"],
                 stock=entry["stock"],
                 available_sizes=STANDARD_SIZES,
-                image_key=photo(entry["photo_id"]),
+                image_key=foto_unsplash(entry["photo_id"]),
                 play_style=entry["play_style"],
                 surface=entry["surface"],
                 created_at=released_at,
@@ -190,13 +194,58 @@ def ensure_catalog(database) -> None:
         )
 
 
-def run() -> None:
+def descargar_imagen(url):
+    pedido = urllib.request.Request(url, headers={"User-Agent": "zona-pintada-seed"})
+    with urllib.request.urlopen(pedido, timeout=30) as respuesta:
+        return respuesta.read()
+
+
+def subir_fotos_externas(database, descargar=descargar_imagen):
+    # pasa las fotos de unsplash al storage (bucket de supabase o disco en local).
+    # Se puede correr de nuevo sin problema, solo toca las que siguen siendo una url
+    storage = obtener_storage()
+    pendientes = [p for p in database.scalars(select(Product)) if p.image_key and es_imagen_externa(p.image_key)]
+    if not pendientes:
+        return 0
+
+    subidas = 0
+    for numero, product in enumerate(pendientes, start=1):
+        url_original = product.image_key
+        try:
+            contenido = descargar(url_original)
+        except Exception as error:
+            print(f"  no pude bajar la foto de '{product.name}': {error}", file=sys.stderr)
+            continue
+
+        tipo = detectar_tipo_imagen(contenido)
+        if tipo is None:
+            print(f"  la foto de '{product.name}' no es jpg/png/webp, la dejo como estaba", file=sys.stderr)
+            continue
+        content_type, extension = tipo
+
+        clave = f"products/seed-{product.id}.{extension}"
+        storage.guardar(clave, contenido, content_type)
+        product.image_key = clave
+        # los pedidos viejos guardan su propia copia de la imagen, tambien hay que actualizarlos
+        for item in database.scalars(select(OrderItem).where(OrderItem.image_key == url_original)):
+            item.image_key = clave
+        database.commit()
+        subidas += 1
+        print(f"  {numero}/{len(pendientes)} {product.name}")
+    return subidas
+
+
+def ejecutar() -> None:
     Base.metadata.create_all(engine)
     with SessionFactory() as database:
-        ensure_administrator(database)
-        ensure_catalog(database)
+        crear_admin_si_falta(database)
+        cargar_catalogo(database)
         database.commit()
+
+        print("subiendo fotos al storage...")
+        cantidad = subir_fotos_externas(database)
+        print(f"listo, {cantidad} fotos subidas")
 
 
 if __name__ == "__main__":
-    run()
+    ejecutar()
