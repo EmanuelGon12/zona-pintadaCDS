@@ -8,7 +8,7 @@ const HERO_IMAGE = "https://images.unsplash.com/photo-1546519638-68e109498ffc?au
 const NEW_ARRIVALS_ON_HOME = 4;
 
 const SERVICES = [
-  { title: "Envío en 24 a 72 h", text: "Gratis en compras desde USD 150. Despachamos de lunes a viernes." },
+  { title: "Envío en 24 a 72 h", text: "Gratis en compras desde $ 6.000. Despachamos de lunes a viernes." },
   { title: "Cambios sin costo", text: "Si la talla no te queda, tienes 30 días para cambiarla." },
   { title: "Pago seguro", text: "Tarjeta de crédito o débito. No guardamos los datos de tu tarjeta." },
 ];

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.config import obtener_config
@@ -13,7 +14,14 @@ from app.services.orders import (
     items_del_carrito,
     marcar_orden_pagada,
 )
-from app.services.payments import PaymentGateway, PaymentProviderError, obtener_pasarela, leer_evento_stripe
+from app.services.payments import (
+    MercadoPagoGateway,
+    PaymentGateway,
+    PaymentProviderError,
+    firma_mercadopago_valida,
+    leer_evento_stripe,
+    obtener_pasarela,
+)
 from app.services.presenters import problema_del_item, presentar_orden
 
 router = APIRouter(prefix="/api/checkout", tags=["Checkout"])
@@ -52,11 +60,11 @@ def iniciar_checkout(
     try:
         payment_session = gateway.abrir_sesion(
             order,
-            success_url=f"{base_url}/pedidos/{order.id}?pago=exitoso&session_id={{CHECKOUT_SESSION_ID}}",
+            success_url=f"{base_url}/pedidos/{order.id}?pago=exitoso",
             cancel_url=f"{base_url}/carrito?pago=cancelado&orden={order.id}",
         )
     except PaymentProviderError:
-        # stripe fallo, no dejo la orden pendiente para siempre
+        # la pasarela fallo, no dejo la orden pendiente para siempre
         order.status = OrderStatus.CANCELLED
         database.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos iniciar el pago. Prueba de nuevo en unos minutos.")
@@ -99,7 +107,7 @@ def pagar_con_tarjeta_simulada(
     user: User = Depends(usuario_actual),
     database: Session = Depends(obtener_sesion_db),
 ):
-    if obtener_config().usa_stripe:  # con stripe configurado este endpoint no existe
+    if obtener_config().pasarela != "simulada":  # con una pasarela real este endpoint no existe
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No encontrado.")
     order = buscar_orden_propia(database, user, order_id)
     if order.status != OrderStatus.PENDING:
@@ -130,4 +138,47 @@ async def recibir_webhook_stripe(request: Request, database: Session = Depends(o
             marcar_orden_pagada(database, order)
         elif event["type"] == "checkout.session.expired":
             cancelar_orden(database, order)
+    return {"received": True}
+
+
+# mercado pago avisa aca cada vez que cambia un pago. No confiamos en lo que manda:
+# con el id consultamos el pago a su api y recien ahi marcamos la orden
+@router.post("/webhook/mercadopago")
+async def recibir_webhook_mercadopago(request: Request, database: Session = Depends(obtener_sesion_db)):
+    try:
+        cuerpo = await request.json()
+    except ValueError:
+        cuerpo = {}
+    if not isinstance(cuerpo, dict):
+        cuerpo = {}
+
+    tipo = request.query_params.get("type") or request.query_params.get("topic") or cuerpo.get("type")
+    pago_id = request.query_params.get("data.id") or (cuerpo.get("data") or {}).get("id")
+    if tipo != "payment" or not pago_id:
+        return {"received": True}
+    pago_id = str(pago_id)
+
+    config = obtener_config()
+    if config.mercadopago_webhook_secret and not firma_mercadopago_valida(
+        config.mercadopago_webhook_secret,
+        request.headers.get("x-signature"),
+        request.headers.get("x-request-id"),
+        pago_id,
+    ):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Firma inválida")
+
+    gateway = obtener_pasarela()
+    if not isinstance(gateway, MercadoPagoGateway):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Mercado Pago no está configurado")
+
+    try:
+        pago = await run_in_threadpool(gateway.consultar_pago, pago_id)
+    except PaymentProviderError:
+        # devolver error hace que mercado pago reintente mas tarde
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos consultar el pago")
+
+    referencia = str(pago.get("external_reference") or "")
+    order = database.get(Order, int(referencia)) if referencia.isdigit() else None
+    if order is not None and pago.get("status") == "approved":
+        marcar_orden_pagada(database, order)
     return {"received": True}

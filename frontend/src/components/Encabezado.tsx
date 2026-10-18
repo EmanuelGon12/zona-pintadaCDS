@@ -89,7 +89,7 @@ export function Encabezado() {
 
   return (
     <>
-      <div className="announcement">Envío gratis desde USD 150 · Cambios dentro de 30 días</div>
+      <div className="announcement">Envío gratis desde $ 6.000 · Cambios dentro de 30 días</div>
       <header className="site-header">
         <div className="wrapper site-header__inner">
           <Link className="brand" to="/" aria-label="Zona Pintada, inicio">

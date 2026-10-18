@@ -32,19 +32,28 @@ class Settings(BaseSettings):
     s3_url_expiration_seconds: int = 3600
     s3_public_base_url: Optional[str] = None
 
+    mercadopago_access_token: Optional[str] = None
+    mercadopago_webhook_secret: Optional[str] = None
+
     stripe_secret_key: Optional[str] = None
     stripe_webhook_secret: Optional[str] = None
-    currency: str = "usd"
+    currency: str = "uyu"
 
-    free_shipping_threshold_cents: int = 15000
-    flat_shipping_cents: int = 900
+    # montos en centavos de peso uruguayo: envio $290, gratis desde $6.000
+    free_shipping_threshold_cents: int = 600000
+    flat_shipping_cents: int = 29000
     max_units_per_line: int = 10
 
     frontend_directory: Path = PROJECT_DIRECTORY / "frontend" / "dist"
 
     @property
-    def usa_stripe(self) -> bool:
-        return bool(self.stripe_secret_key)
+    def pasarela(self) -> str:
+        # mercado pago tiene prioridad, despues stripe, y si no hay nada el simulador
+        if self.mercadopago_access_token:
+            return "mercadopago"
+        if self.stripe_secret_key:
+            return "stripe"
+        return "simulada"
 
 
 @lru_cache

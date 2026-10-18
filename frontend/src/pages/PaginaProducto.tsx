@@ -159,7 +159,7 @@ export function PaginaProducto() {
           <dl className="detail__facts">
             <div>
               <dt>Envío</dt>
-              <dd>Gratis desde USD 150. Llega en 24 a 72 h hábiles.</dd>
+              <dd>Gratis desde $ 6.000. Llega en 24 a 72 h hábiles.</dd>
             </div>
             <div>
               <dt>Cambios</dt>

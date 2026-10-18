@@ -81,25 +81,31 @@ Las credenciales del administrador se cambian con `ADMIN_EMAIL` y `ADMIN_PASSWOR
 
 ## Pagos
 
-**Con Stripe (modo de prueba).** Definir en `backend/.env`:
+La tienda cobra en pesos uruguayos. Hay tres pasarelas detrás de la misma interfaz (`PaymentGateway`) y se usa la
+primera que esté configurada:
+
+**1. Mercado Pago (modo de prueba).** Es la que usa el despliegue. Stripe no admite cuentas de Uruguay, y el
+enunciado acepta un servicio equivalente. En `backend/.env`:
 
 ```
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+MERCADOPAGO_ACCESS_TOKEN=APP_USR-...      # credenciales de prueba de la aplicación
+MERCADOPAGO_WEBHOOK_SECRET=...            # opcional, para validar la firma de las notificaciones
 ```
 
-El checkout crea una sesión de Stripe Checkout. Al volver del pago, el pedido se confirma consultando la sesión a
-Stripe, y además se procesa el webhook `checkout.session.completed` / `checkout.session.expired`. Para probarlo en
-local:
+El checkout crea una preferencia de Checkout Pro con los productos y el envío calculados en el backend, y usa el id de
+la orden como `external_reference`. Al volver del pago, la orden se confirma buscando en Mercado Pago un pago aprobado
+con esa referencia. Con una URL pública (`https://`) además se activan la vuelta automática a la tienda y las
+notificaciones en `/api/checkout/webhook/mercadopago`. El webhook no confía en el contenido recibido: con el id del pago
+lo consulta a la API de Mercado Pago antes de marcar la orden como pagada.
 
-```bash
-stripe listen --forward-to localhost:8000/api/checkout/webhook
-```
+Para probar hay que crear un comprador de prueba en *Tus integraciones → Cuentas de prueba*, pagar con él en una
+ventana de incógnito y usar una tarjeta de prueba con titular `APRO` (aprobado) u `OTHE` (rechazado).
 
-Tarjeta de prueba: `4242 4242 4242 4242`, cualquier fecha futura y cualquier CVC.
+**2. Stripe (modo de prueba).** Con `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`, si no hay token de Mercado Pago.
+El webhook está en `/api/checkout/webhook`.
 
-**Sin Stripe.** Si `STRIPE_SECRET_KEY` está vacío, el checkout usa una pasarela simulada que replica el flujo
-(redirección, pago aprobado, pago rechazado, cancelación) para poder correr el proyecto sin cuentas externas:
+**3. Simulador.** Si no hay ninguna clave, el checkout usa una pasarela simulada con el mismo flujo, para poder correr
+el proyecto sin cuentas externas:
 
 - `4242 4242 4242 4242` aprueba el pago.
 - `4000 0000 0000 0002` lo rechaza.
@@ -160,9 +166,8 @@ S3_SECRET_ACCESS_KEY=...
 S3_PUBLIC_BASE_URL=https://<ref>.supabase.co/storage/v1/object/public/product-images
 ```
 
-Para pagar con Stripe agrega también `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`, y registra en Stripe el webhook
-`https://tu-proyecto.vercel.app/api/checkout/webhook` con los eventos `checkout.session.completed` y
-`checkout.session.expired`. Sin esas variables se usa la pasarela simulada.
+Para cobrar con Mercado Pago agrega `MERCADOPAGO_ACCESS_TOKEN` (y opcionalmente `MERCADOPAGO_WEBHOOK_SECRET`). Sin
+token de pago se usa la pasarela simulada.
 
 Las tablas se crean solas en el primer arranque. La conexión usa el pooler de Supabase sin pool propio
 (`NullPool`), que es lo recomendado para funciones serverless.
@@ -187,7 +192,7 @@ Los del frontend cubren el formato de precios y tarjetas, los textos del selecto
   y cantidad. Precios, subtotal, envío, total y stock se calculan y validan en el servidor, tanto en el carrito
   como al iniciar el checkout.
 - **Dinero en centavos enteros** para evitar errores de redondeo.
-- **Regla de envío:** USD 9 fijos, gratis desde USD 150 de subtotal (configurable).
+- **Regla de envío:** $ 290 fijos, gratis desde $ 6.000 de subtotal (configurable).
 - **Orden en dos pasos.** Al iniciar el checkout se crea una orden `PENDING` con una copia de los productos,
   cantidades y precios de ese momento. Al confirmarse el pago pasa a `PAID`, se descuenta el stock y se quitan
   del carrito los productos comprados. Si el pago se cancela o expira, queda `CANCELLED`. La confirmación es
@@ -216,5 +221,5 @@ Los del frontend cubren el formato de precios y tarjetas, los textos del selecto
 - Las tablas se crean al iniciar (`create_all`); no hay migraciones. Si cambia el modelo de datos en una base existente, hay que
   recrearla (en local alcanza con borrar `backend/data` y volver a correr el seed).
 - El stock es por modelo, no por talla.
-- La integración con Stripe real no pudo probarse de punta a punta en el desarrollo; sí está cubierto el flujo
-  con la pasarela simulada.
+- La integración con Mercado Pago se probó de punta a punta en modo de prueba. La de Stripe quedó como alternativa
+  pero no se probó contra Stripe real, porque Stripe no admite cuentas de Uruguay.

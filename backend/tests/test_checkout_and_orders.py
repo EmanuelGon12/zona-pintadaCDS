@@ -31,7 +31,7 @@ def test_checkout_guarda_el_precio_del_momento(api, headers_cliente):
     assert order["status"] == "PENDING"
     assert order["items"][0]["unit_price_cents"] == 5000
     assert order["subtotal_cents"] == 10000
-    assert order["total_cents"] == 10900
+    assert order["total_cents"] == 39000
 
 
 def test_pago_aprobado_marca_pagada_descuenta_stock_y_vacia_carrito(api, headers_cliente):

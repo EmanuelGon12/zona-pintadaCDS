@@ -9,15 +9,15 @@ def test_los_totales_los_calcula_el_backend(api, headers_cliente):
     product_id = crear_producto(price_cents=4000)
     cart = agregar_al_carrito(api, headers_cliente, product_id, quantity=2).json()
     assert cart["subtotal_cents"] == 8000
-    assert cart["shipping_cents"] == 900
-    assert cart["total_cents"] == 8900
+    assert cart["shipping_cents"] == 29000
+    assert cart["total_cents"] == 37000
 
 
 def test_envio_gratis_arriba_del_minimo(api, headers_cliente):
-    product_id = crear_producto(price_cents=16000)
+    product_id = crear_producto(price_cents=650000)
     cart = agregar_al_carrito(api, headers_cliente, product_id).json()
     assert cart["shipping_cents"] == 0
-    assert cart["total_cents"] == 16000
+    assert cart["total_cents"] == 650000
 
 
 def test_mismo_producto_y_talla_se_suman_en_una_linea(api, headers_cliente):

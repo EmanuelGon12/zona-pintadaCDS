@@ -5,7 +5,7 @@ import type { CourtSurface, PlayStyle, Product, ProductInput } from "../../api/t
 import { EstadoError, Cargando } from "../../components/EstadosDePagina";
 import { useAvisos } from "../../context/ContextoAvisos";
 import { useCargarDatos } from "../../hooks/useCargarDatos";
-import { centavosATexto, dolaresACentavos } from "../../lib/formato";
+import { centavosATexto, pesosACentavos } from "../../lib/formato";
 import { PLAY_STYLES, PLAY_STYLE_KEYS, SURFACES, SURFACE_KEYS } from "../../lib/estilosDeJuego";
 
 // tallas US del 5 al 13 de a medio punto
@@ -48,8 +48,8 @@ function problemaDeImagen(file: File): string | null {
 }
 
 function armarProducto(values: ProductFormValues): ProductInput | string {
-  const priceCents = dolaresACentavos(values.price);
-  if (priceCents === null || priceCents === 0) return "Ingresa un precio válido, por ejemplo 129.90.";
+  const priceCents = pesosACentavos(values.price);
+  if (priceCents === null || priceCents === 0) return "Ingresa un precio válido, por ejemplo 5190.";
   if (values.availableSizes.length === 0) return "Elige al menos una talla.";
   return {
     name: values.name,
@@ -159,7 +159,7 @@ function FormularioProducto({ product }: { product: Product | null }) {
             />
           </Campo>
           <div className="form-row">
-            <Campo label="Precio (USD)" htmlFor="price">
+            <Campo label="Precio ($)" htmlFor="price">
               <input className="input" id="price" inputMode="decimal" required value={values.price} onChange={(event) => actualizarCampo("price", event.target.value)} />
             </Campo>
             <Campo label="Stock" htmlFor="stock">

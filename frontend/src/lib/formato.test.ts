@@ -1,19 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { dolaresACentavos, formatearVencimiento, formatearTarjeta, numeroDePedido } from "./formato";
+import { formatearPrecio, formatearTarjeta, formatearVencimiento, numeroDePedido, pesosACentavos } from "./formato";
 
-describe("dolaresACentavos", () => {
-  it("convierte montos con punto o coma decimal", () => {
-    expect(dolaresACentavos("129.90")).toBe(12990);
-    expect(dolaresACentavos("129,9")).toBe(12990);
-    expect(dolaresACentavos("80")).toBe(8000);
+describe("pesosACentavos", () => {
+  it("entiende el punto de miles y la coma decimal", () => {
+    expect(pesosACentavos("5190")).toBe(519000);
+    expect(pesosACentavos("5.190")).toBe(519000);
+    expect(pesosACentavos("5.190,50")).toBe(519050);
+    expect(pesosACentavos("5190,5")).toBe(519050);
+    expect(pesosACentavos("129.90")).toBe(12990);
   });
 
   it("rechaza montos inválidos", () => {
-    expect(dolaresACentavos("")).toBeNull();
-    expect(dolaresACentavos("12.345")).toBeNull();
-    expect(dolaresACentavos("-5")).toBeNull();
-    expect(dolaresACentavos("diez")).toBeNull();
+    expect(pesosACentavos("")).toBeNull();
+    expect(pesosACentavos("12,345")).toBeNull();
+    expect(pesosACentavos("-5")).toBeNull();
+    expect(pesosACentavos("diez")).toBeNull();
   });
+});
+
+it("muestra los precios en pesos uruguayos", () => {
+  // Intl pone un espacio duro entre el signo y el numero
+  const sinEspacioDuro = (texto: string) => texto.replace(/\u00a0/g, " ");
+  expect(sinEspacioDuro(formatearPrecio(519000))).toBe("$ 5.190");
+  expect(sinEspacioDuro(formatearPrecio(519050))).toBe("$ 5.190,50");
 });
 
 describe("formato de tarjeta", () => {

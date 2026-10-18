@@ -41,7 +41,7 @@ class ProductWrite(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     colorway: str = Field(default="", max_length=80)
     description: str = Field(default="", max_length=2000)
-    price_cents: int = Field(gt=0, le=1_000_000)
+    price_cents: int = Field(gt=0, le=100_000_000)
     stock: int = Field(ge=0, le=100_000)
     available_sizes: List[str] = Field(min_length=1, max_length=30)
     play_style: PlayStyle = PlayStyle.ALL_AROUND
