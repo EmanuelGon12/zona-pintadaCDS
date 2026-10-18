@@ -1,6 +1,10 @@
 {
   "framework": null,
-  "buildCommand": "",
-  "outputDirectory": "frontend",
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }]
+  "installCommand": "npm --prefix frontend ci",
+  "buildCommand": "npm --prefix frontend run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
 }

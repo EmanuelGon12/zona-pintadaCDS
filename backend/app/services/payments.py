@@ -83,7 +83,7 @@ class SimulatedGateway:
         session_id = f"sim_{order.id}"
         return PaymentSession(
             session_id=session_id,
-            checkout_url=f"{self.settings.public_base_url}/#/pago-simulado/{order.id}",
+            checkout_url=f"/pago-simulado/{order.id}",
         )
 
     def is_paid(self, order: Order) -> bool:

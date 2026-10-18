@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     flat_shipping_cents: int = 900
     max_units_per_line: int = 10
 
-    frontend_directory: Path = PROJECT_DIRECTORY / "frontend"
+    frontend_directory: Path = PROJECT_DIRECTORY / "frontend" / "dist"
 
     @property
     def uses_stripe(self) -> bool:

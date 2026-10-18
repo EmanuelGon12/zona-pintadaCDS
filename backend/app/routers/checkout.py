@@ -50,8 +50,8 @@ def start_checkout(
     try:
         payment_session = gateway.open_session(
             order,
-            success_url=f"{base_url}/#/pedidos/{order.id}?pago=exitoso&session_id={{CHECKOUT_SESSION_ID}}",
-            cancel_url=f"{base_url}/#/carrito?pago=cancelado&orden={order.id}",
+            success_url=f"{base_url}/pedidos/{order.id}?pago=exitoso&session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{base_url}/carrito?pago=cancelado&orden={order.id}",
         )
     except PaymentProviderError:
         order.status = OrderStatus.CANCELLED

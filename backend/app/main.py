@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import get_settings
 from app.database import Base, engine
@@ -19,9 +20,14 @@ FIELD_LABELS = {
 }
 
 
-class RevalidatedStaticFiles(StaticFiles):
+class SinglePageApplication(StaticFiles):
     async def get_response(self, path, scope):
-        response = await super().get_response(path, scope)
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as error:
+            if error.status_code != 404 or path.startswith("api/"):
+                raise
+            response = await super().get_response("index.html", scope)
         response.headers["Cache-Control"] = "no-cache"
         return response
 
@@ -49,7 +55,7 @@ def create_application() -> FastAPI:
         application.mount("/media", StaticFiles(directory=settings.media_directory), name="media")
 
     if settings.frontend_directory.is_dir():
-        application.mount("/", RevalidatedStaticFiles(directory=settings.frontend_directory, html=True), name="frontend")
+        application.mount("/", SinglePageApplication(directory=settings.frontend_directory, html=True), name="frontend")
 
     return application
 

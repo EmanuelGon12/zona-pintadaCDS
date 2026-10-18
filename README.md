@@ -8,18 +8,35 @@ panel de administración para gestionar productos e imágenes.
 ## Estructura
 
 ```
-backend/    API REST (FastAPI + SQLAlchemy + SQLite)
-frontend/   Aplicación web (JavaScript con módulos ES, sin paso de build)
+backend/    API REST (FastAPI + SQLAlchemy, SQLite en local o Postgres)
+frontend/   Aplicación web (React + TypeScript + Vite, React Router)
+api/        Punto de entrada del backend como función serverless en Vercel
 ```
 
-El backend sirve también el frontend, así que alcanza con levantar un solo proceso.
+### Frontend
+
+```
+src/api/         Cliente HTTP tipado y tipos de la API
+src/context/     Sesión, contador del carrito y avisos (React Context)
+src/components/  Encabezado, tarjetas de producto, selector por estilo, protección de rutas
+src/pages/       Una página por pantalla (catálogo, producto, carrito, pedidos, admin, etc.)
+src/hooks/       Carga de datos (`useAsync`) y cierre de sesión
+src/lib/         Formatos de precio y fecha, estilos de juego, armado de URLs del catálogo
+```
+
+Las rutas protegidas (`/carrito`, `/pedidos`, `/admin`) redirigen al login y vuelven a la página original después de
+ingresar. El control de permisos real está en el backend; el frontend solo evita mostrar pantallas que no
+corresponden.
 
 ## Requisitos
 
 - Python 3.9 o superior
+- Node.js 20 o superior
 - Opcional: una base Postgres (por defecto se usa SQLite, sin instalar nada)
 
 ## Puesta en marcha
+
+**Backend**
 
 ```bash
 cd backend
@@ -31,13 +48,26 @@ python -m app.seed
 uvicorn app.main:app --reload
 ```
 
-Abrir <http://localhost:8000>. La documentación interactiva de la API está en <http://localhost:8000/docs>.
+**Frontend**, en otra terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Abrir <http://localhost:5173>. Vite redirige `/api` y `/media` al backend en el puerto 8000 (se cambia con la
+variable `BACKEND_URL`). La documentación interactiva de la API está en <http://localhost:8000/docs>.
+
+Para probar la versión compilada con un solo proceso, ejecutar `npm run build` en `frontend/`: el backend sirve
+`frontend/dist` y responde con la aplicación en cualquier ruta que no sea de la API.
 
 `python -m app.seed` es idempotente: crea el administrador y 12 modelos de ejemplo (11 activos y 1 oculto) solo si
 todavía no existen. Las fotos del seed son de Unsplash y se referencian por URL; las imágenes que se suben desde
 el panel de administración sí se guardan en el almacenamiento configurado.
 
-Si usás otro puerto, ajustá `PUBLIC_BASE_URL` en `backend/.env`, porque se usa para armar las URLs de retorno del pago.
+`PUBLIC_BASE_URL` en `backend/.env` debe apuntar a la dirección donde se abre la tienda, porque se usa para armar las
+URLs de retorno de Stripe.
 
 ### Usuarios
 
@@ -93,8 +123,8 @@ extensión ni el `Content-Type` que declara el cliente.
 
 ## Despliegue en Vercel con Supabase
 
-El backend corre en Vercel como función serverless (`api/index.py`) y el frontend se sirve como estático desde
-`frontend/` (ver `vercel.json`). Como en serverless el disco no persiste, la base de datos y las imágenes viven en
+El backend corre en Vercel como función serverless (`api/index.py`) y el frontend se compila en cada despliegue y se
+sirve como estático desde `frontend/dist` (ver `vercel.json`). Como en serverless el disco no persiste, la base de datos y las imágenes viven en
 Supabase.
 
 **1. Base de datos.** En Supabase crea un proyecto y copia la cadena de conexión del *Transaction pooler*
@@ -135,12 +165,16 @@ Las tablas se crean solas en el primer arranque. La conexión usa el pooler de S
 ## Tests
 
 ```bash
-cd backend
-python -m pytest
+cd backend && python -m pytest
+cd frontend && npm test
 ```
 
-Cubren autenticación y roles, catálogo y búsqueda, reglas del carrito, checkout (pago aprobado, rechazado,
-cancelado), aislamiento de pedidos entre usuarios y validación de imágenes.
+Los del backend cubren autenticación y roles, catálogo, búsqueda y filtros, recomendaciones por estilo de juego,
+reglas del carrito, checkout (pago aprobado, rechazado, cancelado), aislamiento de pedidos entre usuarios y
+validación de imágenes. La suite también se corrió contra Postgres para verificar la compatibilidad con Supabase.
+Los del frontend cubren el formato de precios y tarjetas, los textos del selector y la tarjeta de producto.
+
+`npm run build` además verifica los tipos de TypeScript.
 
 ## Decisiones de diseño
 
@@ -148,7 +182,7 @@ cancelado), aislamiento de pedidos entre usuarios y validación de imágenes.
   y cantidad. Precios, subtotal, envío, total y stock se calculan y validan en el servidor, tanto en el carrito
   como al iniciar el checkout.
 - **Dinero en centavos enteros** para evitar errores de redondeo.
-- **Regla de envío:** US$ 9 fijos, gratis desde US$ 150 de subtotal (configurable).
+- **Regla de envío:** USD 9 fijos, gratis desde USD 150 de subtotal (configurable).
 - **Orden en dos pasos.** Al iniciar el checkout se crea una orden `PENDING` con una copia de los productos,
   cantidades y precios de ese momento. Al confirmarse el pago pasa a `PAID`, se descuenta el stock y se quitan
   del carrito los productos comprados. Si el pago se cancela o expira, queda `CANCELLED`. La confirmación es
@@ -157,8 +191,11 @@ cancelado), aislamiento de pedidos entre usuarios y validación de imágenes.
   propio carrito; sobre el resto recibe `404`. Las rutas `/api/admin/*` exigen rol `ADMIN` en el servidor, más allá
   de lo que oculte el frontend.
 - **Registro público solo crea `CUSTOMER`.** El rol no se acepta desde el cliente.
-- **Sesión con JWT** guardado en `localStorage`. Cerrar sesión descarta el token del lado del cliente.
-- **Búsqueda sin distinguir mayúsculas ni acentos** (`piv` encuentra "Pívot Pro"), mediante una clave de búsqueda
+- **Sesión con JWT** guardado en `localStorage`. Cerrar sesión descarta el token del lado del cliente. Si la API
+  responde `401` con un token vencido, el frontend cierra la sesión y lleva al login.
+- **URLs limpias** con React Router (`/modelos?estilo=SPEED&orden=precio-asc`): los filtros del catálogo viven en la
+  URL, así que se pueden compartir y el botón de volver del navegador funciona como se espera.
+- **Búsqueda sin distinguir mayúsculas ni acentos** (`competicion` encuentra "Zapatilla de básquetbol de competición"), mediante una clave de búsqueda
   normalizada que se mantiene sincronizada con el nombre.
 - **Novedades.** Un producto se considera nuevo durante los 30 días posteriores a su alta. El backend informa
   `is_new` y el catálogo acepta `orden=nuevos|precio-asc|precio-desc` y `limite`.
@@ -173,8 +210,6 @@ cancelado), aislamiento de pedidos entre usuarios y validación de imágenes.
 
 - Las tablas se crean al iniciar (`create_all`); no hay migraciones. Si cambia el modelo de datos en una base existente, hay que
   recrearla (en local alcanza con borrar `backend/data` y volver a correr el seed).
-- El despliegue en Vercel con Supabase no se probó contra los servicios reales. La compatibilidad con Postgres sí se
-  verificó ejecutando la suite de tests completa sobre una instancia local.
 - El stock es por modelo, no por talla.
 - La integración con Stripe real no pudo probarse de punta a punta en el desarrollo; sí está cubierto el flujo
   con la pasarela simulada.
