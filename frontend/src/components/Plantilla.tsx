@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
+import { CapturaDeErrores } from "./CapturaDeErrores";
 import { PieDePagina } from "./PieDePagina";
 import { Encabezado } from "./Encabezado";
 
@@ -12,12 +13,15 @@ function VolverArribaAlNavegar() {
 }
 
 export function Plantilla() {
+  const { pathname } = useLocation();
   return (
     <>
       <VolverArribaAlNavegar />
       <Encabezado />
       <main>
-        <Outlet />
+        <CapturaDeErrores clave={pathname}>
+          <Outlet />
+        </CapturaDeErrores>
       </main>
       <PieDePagina />
     </>

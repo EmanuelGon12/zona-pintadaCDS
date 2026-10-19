@@ -12,15 +12,15 @@ afterEach(() => {
 });
 
 describe("cliente de la API", () => {
-  it("manda el token guardado en cada pedido", async () => {
-    localStorage.setItem("zona-pintada.session", JSON.stringify({ access_token: "abc", user: {} }));
+  it("la sesión viaja en la cookie, no en un header armado con javascript", async () => {
     const fetchFalso = vi.spyOn(globalThis, "fetch").mockResolvedValue(respuestaJson({ lines: [] }));
 
     await api.obtenerCarrito();
 
     const [url, opciones] = fetchFalso.mock.calls[0];
     expect(url).toBe("/api/cart");
-    expect((opciones?.headers as Record<string, string>).Authorization).toBe("Bearer abc");
+    expect(opciones?.credentials).toBe("same-origin");
+    expect((opciones?.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   it("arma los filtros del catálogo en la URL", async () => {
@@ -47,14 +47,22 @@ describe("cliente de la API", () => {
     expect(error.status).toBe(0);
   });
 
-  it("si el token venció avisa para cerrar la sesión", async () => {
-    localStorage.setItem("zona-pintada.session", JSON.stringify({ access_token: "vencido", user: {} }));
+  it("si la sesión venció avisa para cerrarla", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(respuestaJson({ detail: "Tienes que iniciar sesión" }, 401));
     const alVencer = vi.fn();
     alExpirarSesion(alVencer);
 
     await api.listarPedidos().catch(() => null);
     expect(alVencer).toHaveBeenCalledOnce();
+  });
+
+  it("verificar la sesión al cargar no dispara el aviso", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(respuestaJson({ detail: "Tienes que iniciar sesión" }, 401));
+    const alVencer = vi.fn();
+    alExpirarSesion(alVencer);
+
+    await api.usuarioActual().catch(() => null);
+    expect(alVencer).not.toHaveBeenCalled();
   });
 
   it("un 401 sin sesión (login fallido) no cierra nada", async () => {

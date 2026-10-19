@@ -1,4 +1,3 @@
-import { leerSesionGuardada } from "./sesionGuardada";
 import type {
   Cart,
   CatalogQuery,
@@ -31,6 +30,8 @@ export function alExpirarSesion(handler: UnauthorizedHandler | null): void {
   unauthorizedHandler = handler;
 }
 
+const RUTAS_SIN_AVISO_DE_SESION = ["/auth/login", "/auth/me"];
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
@@ -39,8 +40,6 @@ interface RequestOptions {
 
 async function pedir<Result>(path: string, { method = "GET", body, form }: RequestOptions = {}): Promise<Result> {
   const headers: Record<string, string> = {};
-  const token = leerSesionGuardada()?.access_token;
-  if (token) headers.Authorization = `Bearer ${token}`;
 
   let payload: BodyInit | undefined;
   if (form) {
@@ -52,15 +51,16 @@ async function pedir<Result>(path: string, { method = "GET", body, form }: Reque
 
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, { method, headers, body: payload });
+    // la cookie de sesion viaja sola porque la API esta en el mismo dominio
+    response = await fetch(`/api${path}`, { method, headers, body: payload, credentials: "same-origin" });
   } catch {
     throw new ApiError("No pudimos conectar con el servidor. Revisa tu conexión e intenta de nuevo.", 0);
   }
 
   const data: unknown = await response.json().catch(() => null);
 
-  // 401 con token = el token vencio, cerramos sesion
-  if (response.status === 401 && token) {
+  // un 401 fuera del login quiere decir que la sesion vencio. En /auth/me es normal (todavia no entro)
+  if (response.status === 401 && !RUTAS_SIN_AVISO_DE_SESION.includes(path)) {
     unauthorizedHandler?.();
   }
   if (!response.ok) {
@@ -83,6 +83,7 @@ export const api = {
     pedir<Session>("/auth/register", { method: "POST", body }),
   ingresar: (body: { email: string; password: string }) => pedir<Session>("/auth/login", { method: "POST", body }),
   usuarioActual: () => pedir<User>("/auth/me"),
+  salir: () => pedir<null>("/auth/logout", { method: "POST" }),
 
   listarProductos: (query: CatalogQuery = {}) => pedir<Product[]>(`/products?${parametrosCatalogo(query)}`),
   obtenerProducto: (productId: number | string) => pedir<Product>(`/products/${productId}`),

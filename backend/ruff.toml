@@ -1,0 +1,11 @@
+target-version = "py39"
+line-length = 130
+
+[lint]
+select = ["E", "F", "B", "BLE"]
+# B008: FastAPI usa Depends() como valor por defecto a proposito
+ignore = ["E501", "B008"]
+
+[lint.per-file-ignores]
+# las variables de entorno tienen que estar antes de importar la app
+"tests/conftest.py" = ["E402"]

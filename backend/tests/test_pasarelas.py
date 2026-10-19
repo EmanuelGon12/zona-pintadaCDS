@@ -1,7 +1,6 @@
 import hashlib
 import hmac
 
-from app import config as modulo_config
 from app.config import Settings
 from app.database import SessionFactory
 from app.main import app
@@ -10,7 +9,6 @@ from app.services.payments import (
     MercadoPagoGateway,
     PaymentProviderError,
     SimulatedGateway,
-    StripeGateway,
     obtener_pasarela,
 )
 from tests.conftest import crear_producto
@@ -18,9 +16,8 @@ from tests.conftest import crear_producto
 
 def test_se_elige_la_pasarela_segun_la_configuracion(monkeypatch):
     casos = [
-        (Settings(mercadopago_access_token="APP_USR-x", stripe_secret_key="sk_test"), MercadoPagoGateway),
-        (Settings(mercadopago_access_token=None, stripe_secret_key="sk_test"), StripeGateway),
-        (Settings(mercadopago_access_token=None, stripe_secret_key=None), SimulatedGateway),
+        (Settings(mercadopago_access_token="APP_USR-x"), MercadoPagoGateway),
+        (Settings(mercadopago_access_token=None), SimulatedGateway),
     ]
     from app.services import payments
 
@@ -148,11 +145,3 @@ def test_webhook_mp_ignora_ordenes_que_no_existen(api, monkeypatch):
 
     monkeypatch.setattr(checkout, "obtener_pasarela", lambda: pasarela_mp_falsa("approved", 9999))
     assert api.post("/api/checkout/webhook/mercadopago?data.id=1&type=payment").status_code == 200
-
-
-def test_webhook_stripe_con_firma_invalida(api, monkeypatch):
-    from app.services import payments
-
-    monkeypatch.setattr(payments, "obtener_config", lambda: Settings(stripe_webhook_secret="whsec_prueba"))
-    respuesta = api.post("/api/checkout/webhook", content=b"{}", headers={"stripe-signature": "t=1,v1=firma-falsa"})
-    assert respuesta.status_code == 400

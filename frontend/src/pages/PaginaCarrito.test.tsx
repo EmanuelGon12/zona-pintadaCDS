@@ -8,7 +8,7 @@ import { PaginaCarrito } from "./PaginaCarrito";
 
 afterEach(() => vi.restoreAllMocks());
 
-const sinEspacioDuro = (texto: string | null) => (texto ?? "").replace(/ /g, " ");
+const sinEspacioDuro = (texto: string | null) => (texto ?? "").replace(/\u00a0/g, " ");
 
 describe("carrito", () => {
   it("muestra las líneas y los totales que calcula el backend", async () => {

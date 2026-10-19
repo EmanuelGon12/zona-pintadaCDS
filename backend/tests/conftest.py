@@ -5,7 +5,6 @@ from pathlib import Path
 TEST_DIRECTORY = Path(tempfile.mkdtemp(prefix="zona-pintada-tests-"))
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TEST_DIRECTORY / 'test.db'}")
 os.environ["MEDIA_DIRECTORY"] = str(TEST_DIRECTORY / "media")
-os.environ["STRIPE_SECRET_KEY"] = ""
 os.environ["MERCADOPAGO_ACCESS_TOKEN"] = ""  # que no agarre el token del .env
 os.environ["JWT_SECRET"] = "clave-de-pruebas-con-longitud-suficiente-32"
 

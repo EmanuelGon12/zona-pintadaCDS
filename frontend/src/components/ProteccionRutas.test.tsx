@@ -1,13 +1,21 @@
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { SESION_ADMIN, SESION_CLIENTE, renderizar } from "../test/renderizar";
 import { SoloAdmin, SoloLogueados } from "./ProteccionRutas";
 
 describe("protección de rutas", () => {
-  it("manda al login guardando a dónde quería ir", () => {
+  it("manda al login guardando a dónde quería ir", async () => {
     renderizar(<SoloLogueados><p>Mis pedidos</p></SoloLogueados>, { ruta: "/pedidos?pagina=2" });
     expect(screen.queryByText("Mis pedidos")).not.toBeInTheDocument();
-    expect(screen.getByTestId("ubicacion")).toHaveTextContent("/ingresar?volver=%2Fpedidos%3Fpagina%3D2");
+    await waitFor(() => expect(screen.getByTestId("ubicacion")).toHaveTextContent("/ingresar?volver=%2Fpedidos%3Fpagina%3D2"));
+  });
+
+  it("espera a que el backend confirme la cookie antes de decidir", async () => {
+    // sin nada guardado pero con cookie valida: no tiene que mandarlo al login
+    renderizar(<SoloLogueados><p>Mis pedidos</p></SoloLogueados>, { ruta: "/pedidos", sesion: SESION_CLIENTE, usuarioEnCache: false });
+    expect(screen.getByText("Cargando…")).toBeInTheDocument();
+    expect(await screen.findByText("Mis pedidos")).toBeInTheDocument();
+    expect(screen.getByTestId("ubicacion")).toHaveTextContent(/^\/pedidos$/);
   });
 
   it("deja pasar a un usuario logueado", () => {

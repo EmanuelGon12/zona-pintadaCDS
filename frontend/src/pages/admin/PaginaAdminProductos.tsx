@@ -6,7 +6,7 @@ import { formatearPrecio, pluralizar } from '../../lib/formato'
 import { PLAY_STYLES } from '../../lib/estilosDeJuego'
 
 export function PaginaAdminProductos() {
-  const { data: products, error, isLoading } = useCargarDatos(() => api.listarProductosAdmin(), []);
+  const { data: products, error, isLoading } = useCargarDatos(() => api.listarProductosAdmin(), "admin-productos");
 
   if (isLoading) return <Cargando />;
   if (error || !products) return <EstadoError error={error ?? new Error("No pudimos cargar los productos.")} />;

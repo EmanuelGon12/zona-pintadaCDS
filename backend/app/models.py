@@ -52,6 +52,15 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_utc)
 
 
+class LoginAttempt(Base):
+    # intentos de login fallidos. Va en la base porque en serverless cada request puede caer en otra instancia
+    __tablename__ = "login_attempts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=ahora_utc, index=True)
+
+
 class Product(Base):
     __tablename__ = "products"
 

@@ -19,7 +19,7 @@ describe("ingreso", () => {
 
     expect(ingresar).toHaveBeenCalledWith({ email: "cliente@correo.com", password: "clave-segura" });
     expect(await screen.findByTestId("ubicacion")).toHaveTextContent("/carrito");
-    expect(JSON.parse(localStorage.getItem("zona-pintada.session")!).user.email).toBe("cliente@correo.com");
+    expect(JSON.parse(localStorage.getItem("zona-pintada.usuario")!).email).toBe("cliente@correo.com");
     expect(await screen.findByText("Hola, Lucía.")).toBeInTheDocument();
   });
 
@@ -33,7 +33,7 @@ describe("ingreso", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Email o contraseña incorrectos.");
     expect(screen.getByRole("button", { name: "Ingresar" })).toBeEnabled();
-    expect(localStorage.getItem("zona-pintada.session")).toBeNull();
+    expect(localStorage.getItem("zona-pintada.usuario")).toBeNull();
   });
 
   it("no vuelve a sitios externos aunque lo pidan en la URL", async () => {

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { alExpirarSesion } from "../api/cliente";
-import { leerSesionGuardada, guardarSesionLocal } from "../api/sesionGuardada";
+import { alExpirarSesion, api } from "../api/cliente";
+import { guardarUsuarioLocal, leerUsuarioGuardado } from "../api/sesionGuardada";
 import type { Session, User } from "../api/tipos";
 
 // "manual" = apreto salir, "expired" = el token vencio. Sirve para saber a donde mandarlo despues
@@ -11,6 +11,7 @@ interface SessionContextValue {
   user: User | null;
   isAuthenticated: boolean;
   isAdministrator: boolean;
+  verificando: boolean;
   lastSignOutReason: SignOutReason | null;
   guardarSesion: (session: Session) => void;
   cerrarSesion: (reason?: SignOutReason) => void;
@@ -19,20 +20,43 @@ interface SessionContextValue {
 const ContextoSesion = createContext<SessionContextValue | null>(null);
 
 export function ProveedorSesion({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(leerSesionGuardada);
+  // arranco con lo que habia guardado para no mostrar "Ingresar" un segundo, y despues confirmo con el backend
+  const [user, setUser] = useState<User | null>(leerUsuarioGuardado);
+  const [verificando, setVerificando] = useState(true);
   const [lastSignOutReason, setLastSignOutReason] = useState<SignOutReason | null>(null);
   const navigate = useNavigate();
 
-  const guardarSesion = useCallback((newSession: Session) => {
-    guardarSesionLocal(newSession);
-    setSession(newSession);
+  const guardarSesion = useCallback((session: Session) => {
+    guardarUsuarioLocal(session.user);
+    setUser(session.user);
     setLastSignOutReason(null);
   }, []);
 
   const cerrarSesion = useCallback((reason: SignOutReason = "manual") => {
-    guardarSesionLocal(null);
-    setSession(null);
+    // si salio a mano le pido al backend que borre la cookie; si vencio ya no sirve igual
+    if (reason === "manual") api.salir().catch(() => null);
+    guardarUsuarioLocal(null);
+    setUser(null);
     setLastSignOutReason(reason);
+  }, []);
+
+  useEffect(() => {
+    let sigueMontado = true;
+    api.usuarioActual().then(
+      (usuario) => {
+        if (!sigueMontado) return;
+        guardarUsuarioLocal(usuario);
+        setUser(usuario);
+      },
+      () => {
+        if (!sigueMontado) return;
+        guardarUsuarioLocal(null);
+        setUser(null);
+      }
+    ).finally(() => sigueMontado && setVerificando(false));
+    return () => {
+      sigueMontado = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -45,14 +69,15 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      user: session?.user ?? null,
-      isAuthenticated: session !== null,
-      isAdministrator: session?.user.role === "ADMIN",
+      user,
+      isAuthenticated: user !== null,
+      isAdministrator: user?.role === "ADMIN",
+      verificando,
       lastSignOutReason,
       guardarSesion,
       cerrarSesion,
     }),
-    [session, lastSignOutReason, guardarSesion, cerrarSesion]
+    [user, verificando, lastSignOutReason, guardarSesion, cerrarSesion]
   );
 
   return <ContextoSesion.Provider value={value}>{children}</ContextoSesion.Provider>;

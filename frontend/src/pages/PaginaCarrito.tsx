@@ -71,7 +71,7 @@ function ResumenCompra({ cart }: { cart: Cart }) {
     setIsRedirecting(true);
     try {
       const { checkout_url: checkoutUrl } = await api.iniciarPago();
-      // el simulador devuelve una ruta nuestra, stripe una url externa
+      // el simulador devuelve una ruta nuestra, mercado pago una url externa
       if (checkoutUrl.startsWith("/")) {
         navigate(checkoutUrl);
       } else {
@@ -115,7 +115,7 @@ export function PaginaCarrito() {
   useAvisoPagoCancelado();
   const { actualizarContador } = useCarrito();
   const mostrarAviso = useAvisos();
-  const { data: cart, error, isLoading, cambiarDatos } = useCargarDatos(() => api.obtenerCarrito(), []);
+  const { data: cart, error, isLoading, cambiarDatos } = useCargarDatos(() => api.obtenerCarrito(), "carrito");
 
   useEffect(() => {
     if (cart) actualizarContador(cart.item_count);

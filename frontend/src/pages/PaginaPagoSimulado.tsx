@@ -8,7 +8,7 @@ import { formatearVencimiento, formatearTarjeta, numeroDePedido, formatearPrecio
 export function PaginaPagoSimulado() {
   const { orderId = "" } = useParams();
   const navigate = useNavigate();
-  const { data: order, error, isLoading } = useCargarDatos(() => api.obtenerPedido(orderId), [orderId]);
+  const { data: order, error, isLoading } = useCargarDatos(() => api.obtenerPedido(orderId), `pedido-${orderId}`);
 
   const [cardNumber, setCardNumber] = useState("");
   const [expiry, setExpiry] = useState("");

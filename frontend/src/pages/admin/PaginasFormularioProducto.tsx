@@ -254,7 +254,7 @@ export function PaginaNuevoProducto() {
 
 export function PaginaEditarProducto() {
   const { productId = "" } = useParams();
-  const { data: product, error, isLoading } = useCargarDatos(() => api.obtenerProductoAdmin(productId), [productId]);
+  const { data: product, error, isLoading } = useCargarDatos(() => api.obtenerProductoAdmin(productId), `admin-producto-${productId}`);
 
   if (isLoading) return <Cargando />;
   if (error || !product) return <EstadoError error={error ?? new Error("No encontramos ese producto.")} />;

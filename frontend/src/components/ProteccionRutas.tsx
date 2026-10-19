@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useSesion } from "../context/ContextoSesion";
-import { PaginaMensaje } from "./EstadosDePagina";
+import { Cargando, PaginaMensaje } from "./EstadosDePagina";
 
 function RedirigirAlLogin() {
   const location = useLocation();
@@ -13,13 +13,15 @@ function RedirigirAlLogin() {
 }
 
 export function SoloLogueados({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useSesion();
-  return isAuthenticated ? <>{children}</> : <RedirigirAlLogin />;
+  const { isAuthenticated, verificando } = useSesion();
+  if (isAuthenticated) return <>{children}</>;
+  // mientras el backend confirma la cookie no lo mando al login (capaz si tiene sesion)
+  return verificando ? <Cargando /> : <RedirigirAlLogin />;
 }
 
 export function SoloAdmin({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isAdministrator } = useSesion();
-  if (!isAuthenticated) return <RedirigirAlLogin />;
+  const { isAuthenticated, isAdministrator, verificando } = useSesion();
+  if (!isAuthenticated) return verificando ? <Cargando /> : <RedirigirAlLogin />;
   if (!isAdministrator) {
     return (
       <PaginaMensaje title="Sin acceso">

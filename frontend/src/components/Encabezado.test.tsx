@@ -28,11 +28,13 @@ describe("encabezado", () => {
     expect(await screen.findByRole("link", { name: "Administración" })).toHaveAttribute("href", "/admin");
   });
 
-  it("salir borra la sesión", async () => {
+  it("salir pide al backend borrar la cookie y olvida al usuario", async () => {
     vi.spyOn(api, "obtenerCarrito").mockResolvedValue(carritoDePrueba({ item_count: 1 }));
+    const salir = vi.spyOn(api, "salir").mockResolvedValue(null);
     renderizar(<Encabezado />, { sesion: SESION_CLIENTE });
     await userEvent.click(await screen.findByRole("button", { name: "Salir" }));
-    expect(localStorage.getItem("zona-pintada.session")).toBeNull();
+    expect(salir).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("zona-pintada.usuario")).toBeNull();
     expect(await screen.findByText("Cerraste sesión.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ingresar" })).toBeInTheDocument();
   });

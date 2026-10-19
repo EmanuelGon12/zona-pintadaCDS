@@ -114,7 +114,3 @@ def test_cada_usuario_ve_solo_sus_ordenes(api, headers_cliente, headers_otro_cli
     assert api.post(
         f"/api/checkout/simulated/{order_id}/pay", headers=headers_otro_cliente, json={"card_number": APPROVED_CARD}
     ).status_code == 404
-
-
-def test_webhook_sin_configurar_responde_400(api):
-    assert api.post("/api/checkout/webhook", content=b"{}").status_code == 400

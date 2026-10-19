@@ -5,7 +5,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.config import obtener_config
-from app.database import Base, SessionFactory, engine
+from app.database import SessionFactory
 from app.models import CourtSurface, OrderItem, PlayStyle, Product, Role, User, ahora_utc
 from app.security import hashear_password
 from app.storage import detectar_tipo_imagen, es_imagen_externa, obtener_storage
@@ -214,7 +214,7 @@ def subir_fotos_externas(database, descargar=None):
         url_original = product.image_key
         try:
             contenido = descargar(url_original)
-        except Exception as error:
+        except OSError as error:  # incluye timeouts y errores http de urllib
             print(f"  no pude bajar la foto de '{product.name}': {error}", file=sys.stderr)
             continue
 
@@ -237,7 +237,7 @@ def subir_fotos_externas(database, descargar=None):
 
 
 def ejecutar() -> None:
-    Base.metadata.create_all(engine)
+    # las tablas las crean las migraciones: correr antes "alembic upgrade head"
     with SessionFactory() as database:
         crear_admin_si_falta(database)
         cargar_catalogo(database)

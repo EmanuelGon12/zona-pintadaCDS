@@ -136,7 +136,7 @@ function FormularioCompra({ product }: { product: Product }) {
 
 export function PaginaProducto() {
   const { productId = "" } = useParams();
-  const { data: product, error, isLoading } = useCargarDatos(() => api.obtenerProducto(productId), [productId]);
+  const { data: product, error, isLoading } = useCargarDatos(() => api.obtenerProducto(productId), `producto-${productId}`);
 
   if (isLoading) return <Cargando />;
   if (error || !product) return <EstadoError error={error ?? new Error("No encontramos ese producto.")} />;

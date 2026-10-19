@@ -31,7 +31,7 @@ export function PaginaCatalogo() {
 
   const { data: products, error, isLoading } = useCargarDatos(
     () => api.listarProductos({ search, playStyle, order }),
-    [search, playStyle, order]
+    `catalogo-${search}-${playStyle}-${order}`
   );
 
   let title = "Todos los modelos";
@@ -111,7 +111,7 @@ export function PaginaCatalogo() {
 }
 
 export function PaginaNovedades() {
-  const { data: products, error, isLoading } = useCargarDatos(() => api.listarProductos({ order: "nuevos" }), []);
+  const { data: products, error, isLoading } = useCargarDatos(() => api.listarProductos({ order: "nuevos" }), "novedades");
   const arrivals = products?.filter((product) => product.is_new) ?? [];
 
   if (isLoading) return <Cargando />;

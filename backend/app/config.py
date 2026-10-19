@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "cambiar-esta-clave-en-produccion"  # en vercel se pisa con JWT_SECRET
     jwt_expiration_minutes: int = 60 * 12
+    session_cookie_name: str = "zp_sesion"
+    login_max_attempts: int = 5  # intentos fallidos por email antes de bloquear un rato
+    login_window_minutes: int = 15
 
     admin_email: str = "admin@zonapintada.uy"
     admin_password: str = "admin12345"
@@ -35,9 +38,6 @@ class Settings(BaseSettings):
     mercadopago_access_token: Optional[str] = None
     mercadopago_webhook_secret: Optional[str] = None
 
-    stripe_secret_key: Optional[str] = None
-    stripe_webhook_secret: Optional[str] = None
-    currency: str = "uyu"
 
     # montos en centavos de peso uruguayo: envio $290, gratis desde $6.000
     free_shipping_threshold_cents: int = 600000
@@ -49,12 +49,8 @@ class Settings(BaseSettings):
 
     @property
     def pasarela(self) -> str:
-        # mercado pago tiene prioridad, despues stripe, y si no hay nada el simulador
-        if self.mercadopago_access_token:
-            return "mercadopago"
-        if self.stripe_secret_key:
-            return "stripe"
-        return "simulada"
+        # con token de mercado pago se cobra de verdad (modo prueba), si no el simulador
+        return "mercadopago" if self.mercadopago_access_token else "simulada"
 
 
 @lru_cache

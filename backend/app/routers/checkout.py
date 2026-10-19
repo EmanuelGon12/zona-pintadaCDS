@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -22,14 +24,14 @@ from app.services.payments import (
     PaymentGateway,
     PaymentProviderError,
     firma_mercadopago_valida,
-    leer_evento_stripe,
     obtener_pasarela,
 )
 from app.services.presenters import problema_del_item, presentar_orden
 
 router = APIRouter(prefix="/api/checkout", tags=["Checkout"])
+logger = logging.getLogger(__name__)
 
-# mismas tarjetas de prueba que usa stripe, para que el simulador se sienta igual
+# tarjetas de prueba del simulador (las mismas que usan las pasarelas en sus ejemplos)
 APPROVED_TEST_CARD = "4242424242424242"
 DECLINED_TEST_CARD = "4000000000000002"
 
@@ -66,7 +68,7 @@ def iniciar_checkout(
         order = crear_orden_pendiente(database, user, cart_items)
     except StockAgotado as agotado:
         database.rollback()
-        raise HTTPException(status.HTTP_409_CONFLICT, f"{agotado.nombre_producto}: se agotó mientras comprabas.")
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{agotado.nombre_producto}: se agotó mientras comprabas.") from agotado
 
     base_url = obtener_config().public_base_url
     try:
@@ -75,12 +77,12 @@ def iniciar_checkout(
             success_url=f"{base_url}/pedidos/{order.id}?pago=exitoso",
             cancel_url=f"{base_url}/carrito?pago=cancelado&orden={order.id}",
         )
-    except PaymentProviderError:
+    except PaymentProviderError as error:
         # la pasarela fallo, no dejo la orden pendiente para siempre y libero lo reservado
         devolver_stock(database, order)
         order.status = OrderStatus.CANCELLED
         database.commit()
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos iniciar el pago. Prueba de nuevo en unos minutos.")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos iniciar el pago. Prueba de nuevo en unos minutos.") from error
 
     order.payment_session_id = payment_session.session_id
     database.commit()
@@ -100,8 +102,8 @@ def confirmar_pago(
         try:
             if gateway.esta_pagada(order):
                 marcar_orden_pagada(database, order)
-        except PaymentProviderError:
-            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos verificar el pago todavía.")
+        except PaymentProviderError as error:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos verificar el pago todavía.") from error
     return presentar_orden(order)
 
 
@@ -137,26 +139,6 @@ def pagar_con_tarjeta_simulada(
     return presentar_orden(marcar_orden_pagada(database, order))
 
 
-# stripe avisa aca cuando se completa o vence un pago. Es el respaldo por si
-# el usuario cierra la pestaña antes de volver a la tienda
-@router.post("/webhook", include_in_schema=True)
-async def recibir_webhook_stripe(request: Request, database: Session = Depends(obtener_sesion_db)):
-    try:
-        event = leer_evento_stripe(await request.body(), request.headers.get("stripe-signature"))
-    except PaymentProviderError as error:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
-
-    session_data = event["data"]["object"]
-    order_id = (session_data.get("metadata") or {}).get("order_id")
-    order = database.get(Order, int(order_id)) if order_id else None
-    if order is not None:
-        if event["type"] == "checkout.session.completed" and session_data.get("payment_status") == "paid":
-            marcar_orden_pagada(database, order)
-        elif event["type"] == "checkout.session.expired":
-            cancelar_orden(database, order)
-    return {"received": True}
-
-
 # mercado pago avisa aca cada vez que cambia un pago. No confiamos en lo que manda:
 # con el id consultamos el pago a su api y recien ahi marcamos la orden
 @router.post("/webhook/mercadopago")
@@ -181,6 +163,7 @@ async def recibir_webhook_mercadopago(request: Request, database: Session = Depe
         request.headers.get("x-request-id"),
         pago_id,
     ):
+        logger.warning("webhook de mercado pago con firma invalida (pago %s)", pago_id)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Firma inválida")
 
     gateway = obtener_pasarela()
@@ -189,12 +172,13 @@ async def recibir_webhook_mercadopago(request: Request, database: Session = Depe
 
     try:
         pago = await run_in_threadpool(gateway.consultar_pago, pago_id)
-    except PaymentProviderError:
+    except PaymentProviderError as error:
         # devolver error hace que mercado pago reintente mas tarde
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos consultar el pago")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos consultar el pago") from error
 
     referencia = str(pago.get("external_reference") or "")
     order = database.get(Order, int(referencia)) if referencia.isdigit() else None
+    logger.info("webhook mercado pago: pago %s %s, orden %s", pago_id, pago.get("status"), referencia or "-")
     if order is not None and pago.get("status") == "approved":
         marcar_orden_pagada(database, order)
     return {"received": True}

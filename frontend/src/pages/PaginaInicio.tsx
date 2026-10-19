@@ -37,7 +37,7 @@ function Portada() {
 }
 
 function SeccionNovedades() {
-  const { data: newest } = useCargarDatos(() => api.listarProductos({ order: "nuevos", limit: 8 }), []);
+  const { data: newest } = useCargarDatos(() => api.listarProductos({ order: "nuevos", limit: 8 }), "novedades-inicio");
   if (!newest || newest.length === 0) return null;
 
   const arrivals = newest.filter((product) => product.is_new);

@@ -33,7 +33,7 @@ function PanelCuenta() {
 }
 
 export function PaginaPedidos() {
-  const { data: orders, error, isLoading } = useCargarDatos(() => api.listarPedidos(), []);
+  const { data: orders, error, isLoading } = useCargarDatos(() => api.listarPedidos(), "pedidos");
 
   if (isLoading) return <Cargando />;
   if (error || !orders) return <EstadoError error={error ?? new Error("No pudimos cargar tus pedidos.")} />;

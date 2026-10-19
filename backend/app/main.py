@@ -1,11 +1,16 @@
-from fastapi import FastAPI, Request, status
+import logging
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import obtener_config
-from app.database import Base, engine
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from app.database import obtener_sesion_db
 from app.routers import administration, authentication, cart, catalog, checkout, orders
 
 CLAVE_JWT_POR_DEFECTO = "cambiar-esta-clave-en-produccion"
@@ -94,8 +99,15 @@ def crear_aplicacion() -> FastAPI:
     if settings.public_base_url.startswith("https://") and settings.jwt_secret == CLAVE_JWT_POR_DEFECTO:
         raise RuntimeError("Falta configurar JWT_SECRET para producción")
 
-    Base.metadata.create_all(engine)
+    # el esquema de la base lo manejan las migraciones de alembic (alembic upgrade head), no la app
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     application = FastAPI(title="Zona Pintada API", version="1.0.0")
+
+    @application.get("/api/health", tags=["Salud"])
+    def salud(database: Session = Depends(obtener_sesion_db)):
+        # sirve para monitoreo: si la base no responde esto da 500
+        database.execute(text("SELECT 1"))
+        return {"estado": "ok"}
 
     @application.middleware("http")
     async def cabeceras_de_seguridad(request: Request, call_next):

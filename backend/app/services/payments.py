@@ -1,16 +1,17 @@
 import hashlib
+import logging
 import hmac
-import json
-import time
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional, Protocol
 
 import httpx
-import stripe
 
 from app.config import Settings, obtener_config
 from app.models import Order, ahora_utc
+
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentProviderError(Exception):
@@ -27,59 +28,6 @@ class PaymentGateway(Protocol):
     def abrir_sesion(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession: ...
 
     def esta_pagada(self, order: Order) -> bool: ...
-
-
-class StripeGateway:
-    def __init__(self, settings: Settings):
-        self.settings = settings
-
-    def abrir_sesion(self, order: Order, success_url: str, cancel_url: str) -> PaymentSession:
-        line_items = [
-            {
-                "quantity": item.quantity,
-                "price_data": {
-                    "currency": self.settings.currency,
-                    "unit_amount": item.unit_price_cents,
-                    "product_data": {"name": f"{item.product_name} · Talla {item.size}"},
-                },
-            }
-            for item in order.items
-        ]
-        if order.shipping_cents:
-            line_items.append(
-                {
-                    "quantity": 1,
-                    "price_data": {
-                        "currency": self.settings.currency,
-                        "unit_amount": order.shipping_cents,
-                        "product_data": {"name": "Envío"},
-                    },
-                }
-            )
-        try:
-            session = stripe.checkout.Session.create(
-                api_key=self.settings.stripe_secret_key,
-                mode="payment",
-                line_items=line_items,
-                success_url=success_url + "&session_id={CHECKOUT_SESSION_ID}",
-                cancel_url=cancel_url,
-                client_reference_id=str(order.id),
-                # stripe pide minimo 30 minutos, lo alineo con la reserva de stock
-                expires_at=int(time.time()) + max(31, self.settings.reservation_minutes) * 60,
-                metadata={"order_id": str(order.id)},
-            )
-        except stripe.StripeError as error:
-            raise PaymentProviderError(str(error)) from error
-        return PaymentSession(session_id=session.id, checkout_url=session.url)
-
-    def esta_pagada(self, order: Order) -> bool:
-        if not order.payment_session_id:
-            return False
-        try:
-            session = stripe.checkout.Session.retrieve(order.payment_session_id, api_key=self.settings.stripe_secret_key)
-        except stripe.StripeError as error:
-            raise PaymentProviderError(str(error)) from error
-        return session.payment_status == "paid"
 
 
 class SimulatedGateway:
@@ -112,6 +60,8 @@ class MercadoPagoGateway:
             respuesta = self.http.request(metodo, ruta, headers=self._headers(), **opciones)
             respuesta.raise_for_status()
         except httpx.HTTPError as error:
+            # el token nunca se loguea, solo la ruta y el error
+            logger.error("mercado pago fallo en %s %s: %s", metodo, ruta, error)
             raise PaymentProviderError(str(error)) from error
         return respuesta.json()
 
@@ -159,8 +109,6 @@ def obtener_pasarela() -> PaymentGateway:
     settings = obtener_config()
     if settings.pasarela == "mercadopago":
         return MercadoPagoGateway(settings)
-    if settings.pasarela == "stripe":
-        return StripeGateway(settings)
     return SimulatedGateway(settings)
 
 
@@ -172,14 +120,3 @@ def firma_mercadopago_valida(secreto: str, encabezado_firma: Optional[str], requ
     manifiesto = f"id:{pago_id.lower()};request-id:{request_id or ''};ts:{partes['ts']};"
     esperada = hmac.new(secreto.encode(), manifiesto.encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(esperada, partes["v1"])
-
-
-def leer_evento_stripe(payload: bytes, signature_header: Optional[str]):
-    settings = obtener_config()
-    if not settings.stripe_webhook_secret:
-        raise PaymentProviderError("Webhook de Stripe sin configurar")
-    try:
-        stripe.Webhook.construct_event(payload, signature_header or "", settings.stripe_webhook_secret)
-        return json.loads(payload)
-    except (ValueError, stripe.SignatureVerificationError) as error:
-        raise PaymentProviderError("Firma de webhook inválida") from error

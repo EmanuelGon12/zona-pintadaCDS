@@ -2,7 +2,7 @@
 
 E-commerce de calzado de básquetbol. Catálogo con búsqueda, filtros por estilo de juego y orden, sección de
 novedades, un selector que recomienda modelos según la posición y la superficie donde juegas, carrito, registro e
-inicio de sesión con roles (`CUSTOMER` y `ADMIN`), checkout con Stripe en modo de prueba, historial de pedidos y un
+inicio de sesión con roles (`CUSTOMER` y `ADMIN`), checkout con Mercado Pago en modo de prueba, historial de pedidos y un
 panel de administración para gestionar productos e imágenes.
 
 ## Estructura
@@ -44,6 +44,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
+alembic upgrade head        # crea las tablas
 python -m app.seed
 uvicorn app.main:app --reload
 ```
@@ -68,7 +69,7 @@ configurado, guardando en la base solo la clave del archivo. Si una foto no se p
 y se reintenta en la próxima corrida.
 
 `PUBLIC_BASE_URL` en `backend/.env` debe apuntar a la dirección donde se abre la tienda, porque se usa para armar las
-URLs de retorno de Stripe.
+URLs de retorno de Mercado Pago.
 
 ### Usuarios
 
@@ -81,11 +82,10 @@ Las credenciales del administrador se cambian con `ADMIN_EMAIL` y `ADMIN_PASSWOR
 
 ## Pagos
 
-La tienda cobra en pesos uruguayos. Hay tres pasarelas detrás de la misma interfaz (`PaymentGateway`) y se usa la
-primera que esté configurada:
+La tienda cobra en pesos uruguayos. Hay dos pasarelas detrás de la misma interfaz (`PaymentGateway`):
 
-**1. Mercado Pago (modo de prueba).** Es la que usa el despliegue. Stripe no admite cuentas de Uruguay, y el
-enunciado acepta un servicio equivalente. En `backend/.env`:
+**Mercado Pago (modo de prueba).** Es la que usa el despliegue. El enunciado pide Stripe o un servicio equivalente,
+y Stripe no admite cuentas de Uruguay. En `backend/.env`:
 
 ```
 MERCADOPAGO_ACCESS_TOKEN=APP_USR-...      # credenciales de prueba de la aplicación
@@ -101,14 +101,13 @@ lo consulta a la API de Mercado Pago antes de marcar la orden como pagada.
 Para probar hay que crear un comprador de prueba en *Tus integraciones → Cuentas de prueba*, pagar con él en una
 ventana de incógnito y usar una tarjeta de prueba con titular `APRO` (aprobado) u `OTHE` (rechazado).
 
-**2. Stripe (modo de prueba).** Con `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`, si no hay token de Mercado Pago.
-El webhook está en `/api/checkout/webhook`.
-
-**3. Simulador.** Si no hay ninguna clave, el checkout usa una pasarela simulada con el mismo flujo, para poder correr
-el proyecto sin cuentas externas:
+**Simulador.** Sin token, el checkout usa una pasarela simulada con el mismo flujo, para poder correr el proyecto sin
+cuentas externas:
 
 - `4242 4242 4242 4242` aprueba el pago.
 - `4000 0000 0000 0002` lo rechaza.
+
+Para sumar otra pasarela alcanza con una clase nueva que implemente `abrir_sesion` y `esta_pagada`.
 
 ## Almacenamiento de imágenes
 
@@ -140,8 +139,18 @@ Supabase.
 **2. Imágenes.** En Storage crea un bucket público (por ejemplo `product-images`). Luego, en Project Settings →
 Storage → S3 Connection, copia el endpoint y la región, y genera un par de claves de acceso.
 
-**3. Cargar datos iniciales** (desde tu máquina). Hay que pasarle también las variables de S3 para que las fotos
-de ejemplo se suban al bucket:
+**3. Crear las tablas** (desde tu máquina, con la cadena de conexión de Supabase):
+
+```bash
+cd backend
+DATABASE_URL='postgresql://...' alembic upgrade head
+```
+
+Si la base ya existía de antes de usar migraciones (tablas creadas por la app), primero hay que marcar el esquema
+inicial como aplicado y recién ahí subir: `alembic stamp 0001` y después `alembic upgrade head`.
+
+**4. Cargar datos iniciales.** Hay que pasarle también las variables de S3 para que las fotos de ejemplo se suban al
+bucket:
 
 ```bash
 cd backend
@@ -151,7 +160,7 @@ S3_ACCESS_KEY_ID='...' S3_SECRET_ACCESS_KEY='...' \
 S3_PUBLIC_BASE_URL='https://<ref>.supabase.co/storage/v1/object/public/product-images' python -m app.seed
 ```
 
-**4. Vercel.** Importa el repositorio (la raíz del proyecto es la raíz del repo) y define estas variables de entorno:
+**5. Vercel.** Importa el repositorio (la raíz del proyecto es la raíz del repo) y define estas variables de entorno:
 
 ```
 DATABASE_URL=postgresql://...
@@ -169,17 +178,30 @@ S3_PUBLIC_BASE_URL=https://<ref>.supabase.co/storage/v1/object/public/product-im
 Para cobrar con Mercado Pago agrega `MERCADOPAGO_ACCESS_TOKEN` (y opcionalmente `MERCADOPAGO_WEBHOOK_SECRET`). Sin
 token de pago se usa la pasarela simulada.
 
-Las tablas se crean solas en el primer arranque. La conexión usa el pooler de Supabase sin pool propio
-(`NullPool`), que es lo recomendado para funciones serverless.
+La conexión usa el pooler de Supabase sin pool propio (`NullPool`), que es lo recomendado para funciones serverless.
+`GET /api/health` responde `{"estado": "ok"}` si la API y la base están funcionando, útil para un monitor.
+
+### Migraciones
+
+El esquema lo manejan las migraciones de Alembic (`backend/migrations`), no la app. Para cambiar el modelo de datos:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "que cambio"   # revisar el archivo generado antes de aplicarlo
+alembic upgrade head
+```
+
+CI verifica que las migraciones generen exactamente el esquema de los modelos (`alembic check`).
 
 ## Tests
 
 ```bash
-cd backend && python -m pytest --cov=app
-cd frontend && npm test            # o npm run test:coverage
+cd backend && ruff check app tests && python -m pytest --cov=app
+cd frontend && npm run lint && npm test            # o npm run test:coverage
 ```
 
-En cada push GitHub Actions corre las dos suites (backend con Python 3.9 y 3.12) y compila el frontend
+En cada push GitHub Actions corre los linters (Ruff y ESLint), verifica las migraciones, corre las dos suites
+(backend con Python 3.9 y 3.12) y compila el frontend
 (`.github/workflows/tests.yml`).
 
 **Backend** (pytest, ~96 % de cobertura). Los tests usan una base SQLite temporal y no salen a internet: las
@@ -196,7 +218,7 @@ pasarelas, S3 y las descargas se reemplazan por dobles.
 - Checkout y órdenes: precio del momento, pago aprobado, rechazado, duplicado o abandonado, fallas de la pasarela,
   cada usuario ve solo sus órdenes.
 - Integraciones: preferencia de Mercado Pago, búsqueda del pago, webhook con y sin firma; sesión y webhook de
-  Stripe; S3 con bucket público y privado; seed que sube las fotos y se puede repetir.
+  S3 con bucket público y privado; seed que sube las fotos y se puede repetir.
 
 **Frontend** (Vitest + Testing Library, ~80 % de cobertura). Se prueba lo que ve y hace el usuario, con la API
 simulada: cliente HTTP (token, errores, sesión vencida), protección de rutas, login y registro, ficha de producto,
@@ -218,8 +240,16 @@ y formulario del admin.
   propio carrito; sobre el resto recibe `404`. Las rutas `/api/admin/*` exigen rol `ADMIN` en el servidor, más allá
   de lo que oculte el frontend.
 - **Registro público solo crea `CUSTOMER`.** El rol no se acepta desde el cliente.
-- **Sesión con JWT** guardado en `localStorage`. Cerrar sesión descarta el token del lado del cliente. Si la API
-  responde `401` con un token vencido, el frontend cierra la sesión y lleva al login.
+- **Sesión en cookie `HttpOnly`.** El JWT viaja en una cookie que JavaScript no puede leer (así un XSS no puede
+  robarla), con `SameSite=Lax` contra CSRF y `Secure` en producción. El frontend solo guarda nombre y rol para mostrar
+  la interfaz, y al cargar confirma la sesión con `/api/auth/me`. `POST /api/auth/logout` borra la cookie. Para
+  clientes que no son el navegador, la API también acepta `Authorization: Bearer`.
+- **Límite de intentos de login.** Con 5 intentos fallidos para un mismo email en 15 minutos, el login responde `429`
+  hasta que pase la ventana. Los intentos se guardan en la base porque en serverless no hay memoria compartida.
+- **Contraseñas** con bcrypt; los mensajes de login no revelan si un email está registrado.
+- **Calidad.** Dependencias con versiones fijas, Ruff y ESLint en CI, logs de los errores de pago y de los webhooks
+  (sin datos sensibles), y una captura de errores en React para que un fallo de una pantalla no deje la página en
+  blanco.
 - **URLs limpias** con React Router (`/modelos?estilo=SPEED&orden=precio-asc`): los filtros del catálogo viven en la
   URL, así que se pueden compartir y el botón de volver del navegador funciona como se espera.
 - **Búsqueda sin distinguir mayúsculas ni acentos** (`competicion` encuentra "Zapatilla de básquetbol de competición"), mediante una clave de búsqueda
@@ -232,19 +262,15 @@ y formulario del admin.
   vive en el backend para poder testearla y cambiarla sin tocar el frontend.
 - **Reserva de stock.** Al iniciar el pago el stock se descuenta con un `UPDATE … WHERE stock >= cantidad`, que es
   atómico: si dos personas compran la última unidad a la vez, solo una lo logra. La reserva dura 30 minutos
-  (`RESERVATION_MINUTES`); si el pago se cancela o vence, el stock vuelve. Las preferencias de Mercado Pago y las
-  sesiones de Stripe vencen junto con la reserva. Si igual llega un pago aprobado tarde, la orden se marca pagada.
+  (`RESERVATION_MINUTES`); si el pago se cancela o vence, el stock vuelve. Las preferencias de Mercado Pago vencen junto
+  con la reserva. Si igual llega un pago aprobado tarde, la orden se marca pagada.
 - **Pasarela detrás de una interfaz** (`PaymentGateway`) y almacenamiento detrás de otra (`ObjectStorage`), para
   poder cambiar de implementación sin tocar las rutas.
 
 ## Limitaciones conocidas
 
-- Las tablas se crean al iniciar (`create_all`); no hay migraciones. Si cambia el modelo de datos en una base existente, hay que
-  recrearla (en local alcanza con borrar `backend/data` y volver a correr el seed).
 - El stock es por modelo, no por talla.
-- No hay límite de intentos de login. En serverless haría falta guardarlo afuera (por ejemplo en la base o en Redis).
-- El token se guarda en `localStorage`. Una cookie `HttpOnly` lo protegería mejor ante un XSS, a cambio de manejar
-  CSRF.
+- El bloqueo de login es por email: frena la fuerza bruta contra una cuenta, pero no a alguien que pruebe la misma
+  contraseña contra muchos emails. Para eso habría que sumar un límite por IP.
 - Las reservas vencidas se liberan cuando alguien agrega al carrito o inicia un pago, no con una tarea programada.
-- La integración con Mercado Pago se probó de punta a punta en modo de prueba. La de Stripe quedó como alternativa
-  pero no se probó contra Stripe real, porque Stripe no admite cuentas de Uruguay.
+- La integración con Mercado Pago se probó de punta a punta en modo de prueba, en local y en Vercel.
