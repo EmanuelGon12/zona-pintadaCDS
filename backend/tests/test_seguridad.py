@@ -97,3 +97,20 @@ def test_el_storage_local_no_escribe_fuera_de_su_carpeta(tmp_path):
 def test_busqueda_no_rompe_con_caracteres_raros(api):
     for termino in ["'; DROP TABLE products; --", "%", "_", "\\", "ñandú"]:
         assert api.get("/api/products", params={"q": termino}).status_code == 200
+
+
+def test_rutas_de_api_inexistentes_dan_404_con_cualquier_metodo(api, tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.main import SinglePageApplication
+
+    (tmp_path / "index.html").write_text("<html>tienda</html>")
+    app_con_frontend = FastAPI()
+    app_con_frontend.mount("/", SinglePageApplication(directory=tmp_path, html=True))
+    cliente = TestClient(app_con_frontend)
+
+    assert cliente.post("/api/checkout/webhook").status_code == 404
+    assert cliente.get("/api/no-existe").status_code == 404
+    # y las rutas del frontend siguen devolviendo la app
+    assert cliente.get("/modelos").text == "<html>tienda</html>"

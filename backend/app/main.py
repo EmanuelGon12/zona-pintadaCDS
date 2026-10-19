@@ -83,6 +83,9 @@ def traducir_error(error: dict) -> str:
 # para que react router se encargue. Solo se usa en local, en vercel lo resuelve vercel.json
 class SinglePageApplication(StaticFiles):
     async def get_response(self, path, scope):
+        # una ruta de la api que no existe es un 404, no el index.html (ni un 405 por ser POST)
+        if path == "api" or path.startswith("api/"):
+            raise StarletteHTTPException(status_code=404)
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as error:
