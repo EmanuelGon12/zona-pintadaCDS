@@ -200,9 +200,10 @@ def descargar_imagen(url):
         return respuesta.read()
 
 
-def subir_fotos_externas(database, descargar=descargar_imagen):
+def subir_fotos_externas(database, descargar=None):
     # pasa las fotos de unsplash al storage (bucket de supabase o disco en local).
     # Se puede correr de nuevo sin problema, solo toca las que siguen siendo una url
+    descargar = descargar or descargar_imagen  # se resuelve aca para poder reemplazarla en los tests
     storage = obtener_storage()
     pendientes = [p for p in database.scalars(select(Product)) if p.image_key and es_imagen_externa(p.image_key)]
     if not pendientes:

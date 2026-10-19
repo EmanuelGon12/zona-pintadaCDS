@@ -8,10 +8,13 @@ from app.dependencies import usuario_actual
 from app.models import Order, OrderStatus, User
 from app.schemas import CheckoutOut, OrderOut, SimulatedPaymentRequest
 from app.services.orders import (
+    StockAgotado,
     cancelar_orden,
     cancelar_ordenes_pendientes,
     crear_orden_pendiente,
+    devolver_stock,
     items_del_carrito,
+    liberar_reservas_vencidas,
     marcar_orden_pagada,
 )
 from app.services.payments import (
@@ -44,17 +47,26 @@ def iniciar_checkout(
     database: Session = Depends(obtener_sesion_db),
     gateway: PaymentGateway = Depends(obtener_pasarela),
 ):
+    liberar_reservas_vencidas(database)
+    # primero suelto lo que este usuario tenia reservado de un pago anterior, si no se bloquea a si mismo
+    cancelar_ordenes_pendientes(database, user)
+    database.flush()
+
     cart_items = items_del_carrito(database, user)
     if not cart_items:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tu carrito está vacío.")
     # vuelvo a validar todo aca, el carrito pudo cambiar desde que se agrego (stock, producto oculto, etc)
     for item in cart_items:
+        database.refresh(item.product)
         problem = problema_del_item(item)
         if problem:
             raise HTTPException(status.HTTP_409_CONFLICT, f"{item.product.name}: {problem}")
 
-    cancelar_ordenes_pendientes(database, user)
-    order = crear_orden_pendiente(database, user, cart_items)
+    try:
+        order = crear_orden_pendiente(database, user, cart_items)
+    except StockAgotado as agotado:
+        database.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, f"{agotado.nombre_producto}: se agotó mientras comprabas.")
 
     base_url = obtener_config().public_base_url
     try:
@@ -64,7 +76,8 @@ def iniciar_checkout(
             cancel_url=f"{base_url}/carrito?pago=cancelado&orden={order.id}",
         )
     except PaymentProviderError:
-        # la pasarela fallo, no dejo la orden pendiente para siempre
+        # la pasarela fallo, no dejo la orden pendiente para siempre y libero lo reservado
+        devolver_stock(database, order)
         order.status = OrderStatus.CANCELLED
         database.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "No pudimos iniciar el pago. Prueba de nuevo en unos minutos.")
@@ -82,7 +95,8 @@ def confirmar_pago(
     gateway: PaymentGateway = Depends(obtener_pasarela),
 ):
     order = buscar_orden_propia(database, user, order_id)
-    if order.status == OrderStatus.PENDING:
+    # tambien reviso las canceladas: el pago pudo aprobarse justo despues de que vencio la reserva
+    if order.status != OrderStatus.PAID:
         try:
             if gateway.esta_pagada(order):
                 marcar_orden_pagada(database, order)
@@ -109,7 +123,9 @@ def pagar_con_tarjeta_simulada(
 ):
     if obtener_config().pasarela != "simulada":  # con una pasarela real este endpoint no existe
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No encontrado.")
+    liberar_reservas_vencidas(database)
     order = buscar_orden_propia(database, user, order_id)
+    database.refresh(order)
     if order.status != OrderStatus.PENDING:
         raise HTTPException(status.HTTP_409_CONFLICT, "Esta orden ya no admite pagos.")
 

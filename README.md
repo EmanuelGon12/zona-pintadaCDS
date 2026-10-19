@@ -175,16 +175,33 @@ Las tablas se crean solas en el primer arranque. La conexión usa el pooler de S
 ## Tests
 
 ```bash
-cd backend && python -m pytest
-cd frontend && npm test
+cd backend && python -m pytest --cov=app
+cd frontend && npm test            # o npm run test:coverage
 ```
 
-Los del backend cubren autenticación y roles, catálogo, búsqueda y filtros, recomendaciones por estilo de juego,
-reglas del carrito, checkout (pago aprobado, rechazado, cancelado), aislamiento de pedidos entre usuarios y
-validación de imágenes. La suite también se corrió contra Postgres para verificar la compatibilidad con Supabase.
-Los del frontend cubren el formato de precios y tarjetas, los textos del selector y la tarjeta de producto.
+En cada push GitHub Actions corre las dos suites (backend con Python 3.9 y 3.12) y compila el frontend
+(`.github/workflows/tests.yml`).
 
-`npm run build` además verifica los tipos de TypeScript.
+**Backend** (pytest, ~96 % de cobertura). Los tests usan una base SQLite temporal y no salen a internet: las
+pasarelas, S3 y las descargas se reemplazan por dobles.
+
+- Autenticación: registro, login, tokens vencidos, adulterados o de usuarios borrados, mensajes que no revelan si un
+  email existe, todas las rutas privadas piden login y todas las del admin piden rol `ADMIN`.
+- Validaciones con mensajes en español (campos vacíos o con espacios, contraseñas largas con tildes, JSON roto,
+  parámetros inválidos).
+- Catálogo: productos ocultos, búsqueda sin tildes y sin comodines, filtros, orden, novedades y recomendaciones.
+- Carrito y precios: reglas de envío en los bordes, límites de cantidad, tallas inexistentes, carrito ajeno.
+- Stock: reserva al iniciar el pago, la última unidad no se vende dos veces, devolución al cancelar o vencer la
+  reserva, pago que llega tarde.
+- Checkout y órdenes: precio del momento, pago aprobado, rechazado, duplicado o abandonado, fallas de la pasarela,
+  cada usuario ve solo sus órdenes.
+- Integraciones: preferencia de Mercado Pago, búsqueda del pago, webhook con y sin firma; sesión y webhook de
+  Stripe; S3 con bucket público y privado; seed que sube las fotos y se puede repetir.
+
+**Frontend** (Vitest + Testing Library, ~80 % de cobertura). Se prueba lo que ve y hace el usuario, con la API
+simulada: cliente HTTP (token, errores, sesión vencida), protección de rutas, login y registro, ficha de producto,
+carrito, pasarela simulada, vuelta del pago, catálogo con filtros en la URL, selector por estilo de juego, encabezado
+y formulario del admin.
 
 ## Decisiones de diseño
 
@@ -213,6 +230,10 @@ Los del frontend cubren el formato de precios y tarjetas, los textos del selecto
   (`INDOOR`, `OUTDOOR`, `BOTH`). `GET /api/products/recommendations?estilo=…&superficie=…` devuelve hasta tres
   modelos con stock del estilo pedido, priorizando los aptos para esa superficie y luego el menor precio. La lógica
   vive en el backend para poder testearla y cambiarla sin tocar el frontend.
+- **Reserva de stock.** Al iniciar el pago el stock se descuenta con un `UPDATE … WHERE stock >= cantidad`, que es
+  atómico: si dos personas compran la última unidad a la vez, solo una lo logra. La reserva dura 30 minutos
+  (`RESERVATION_MINUTES`); si el pago se cancela o vence, el stock vuelve. Las preferencias de Mercado Pago y las
+  sesiones de Stripe vencen junto con la reserva. Si igual llega un pago aprobado tarde, la orden se marca pagada.
 - **Pasarela detrás de una interfaz** (`PaymentGateway`) y almacenamiento detrás de otra (`ObjectStorage`), para
   poder cambiar de implementación sin tocar las rutas.
 
@@ -221,5 +242,9 @@ Los del frontend cubren el formato de precios y tarjetas, los textos del selecto
 - Las tablas se crean al iniciar (`create_all`); no hay migraciones. Si cambia el modelo de datos en una base existente, hay que
   recrearla (en local alcanza con borrar `backend/data` y volver a correr el seed).
 - El stock es por modelo, no por talla.
+- No hay límite de intentos de login. En serverless haría falta guardarlo afuera (por ejemplo en la base o en Redis).
+- El token se guarda en `localStorage`. Una cookie `HttpOnly` lo protegería mejor ante un XSS, a cambio de manejar
+  CSRF.
+- Las reservas vencidas se liberan cuando alguien agrega al carrito o inicia un pago, no con una tarea programada.
 - La integración con Mercado Pago se probó de punta a punta en modo de prueba. La de Stripe quedó como alternativa
   pero no se probó contra Stripe real, porque Stripe no admite cuentas de Uruguay.

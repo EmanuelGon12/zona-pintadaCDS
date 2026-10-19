@@ -1,14 +1,16 @@
 import hashlib
 import hmac
 import json
+import time
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Optional, Protocol
 
 import httpx
 import stripe
 
 from app.config import Settings, obtener_config
-from app.models import Order
+from app.models import Order, ahora_utc
 
 
 class PaymentProviderError(Exception):
@@ -62,6 +64,8 @@ class StripeGateway:
                 success_url=success_url + "&session_id={CHECKOUT_SESSION_ID}",
                 cancel_url=cancel_url,
                 client_reference_id=str(order.id),
+                # stripe pide minimo 30 minutos, lo alineo con la reserva de stock
+                expires_at=int(time.time()) + max(31, self.settings.reservation_minutes) * 60,
                 metadata={"order_id": str(order.id)},
             )
         except stripe.StripeError as error:
@@ -130,6 +134,9 @@ class MercadoPagoGateway:
             "external_reference": str(order.id),  # con esto despues buscamos el pago de la orden
             "back_urls": {"success": success_url, "pending": success_url, "failure": cancel_url},
             "statement_descriptor": "ZONA PINTADA",
+            # que no se pueda pagar despues de que se libera la reserva de stock
+            "expires": True,
+            "expiration_date_to": (ahora_utc() + timedelta(minutes=self.settings.reservation_minutes)).isoformat(timespec="milliseconds"),
         }
         # mercado pago no acepta auto_return ni notificaciones a localhost, solo con la url publica (vercel)
         base_url = self.settings.public_base_url

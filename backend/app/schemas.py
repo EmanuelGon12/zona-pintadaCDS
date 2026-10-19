@@ -1,20 +1,27 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
 from app.models import CourtSurface, OrderStatus, PlayStyle, Role
 
 
+# el strip va antes de medir el largo, si no "   " pasaba como nombre valido
+NombreLimpio = Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=120)]
+
+
 class RegistrationRequest(BaseModel):
     email: EmailStr
-    full_name: str = Field(min_length=2, max_length=120)
+    full_name: NombreLimpio
     password: str = Field(min_length=8, max_length=72)
 
-    @field_validator("full_name")
+    @field_validator("password")
     @classmethod
-    def limpiar_nombre(cls, value: str) -> str:
-        return value.strip()
+    def password_entra_en_bcrypt(cls, value: str) -> str:
+        # bcrypt corta en 72 bytes y la version nueva tira error. Con tildes o ñ 72 caracteres son mas bytes
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("es demasiado larga")
+        return value
 
 
 class LoginRequest(BaseModel):
@@ -38,20 +45,15 @@ class SessionOut(BaseModel):
 
 
 class ProductWrite(BaseModel):
-    name: str = Field(min_length=2, max_length=120)
-    colorway: str = Field(default="", max_length=80)
-    description: str = Field(default="", max_length=2000)
+    name: NombreLimpio
+    colorway: Annotated[str, StringConstraints(strip_whitespace=True, max_length=80)] = ""
+    description: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] = ""
     price_cents: int = Field(gt=0, le=100_000_000)
     stock: int = Field(ge=0, le=100_000)
     available_sizes: List[str] = Field(min_length=1, max_length=30)
     play_style: PlayStyle = PlayStyle.ALL_AROUND
     surface: CourtSurface = CourtSurface.BOTH
     is_active: bool = True
-
-    @field_validator("name", "colorway", "description")
-    @classmethod
-    def limpiar_texto(cls, value: str) -> str:
-        return value.strip()
 
     @field_validator("available_sizes")
     @classmethod

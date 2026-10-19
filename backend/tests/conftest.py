@@ -22,6 +22,17 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 
 @pytest.fixture(autouse=True)
+def sin_internet(monkeypatch):
+    # ningun test tiene que salir a internet, si alguno lo intenta que falle
+    import urllib.request
+
+    def bloqueado(*_args, **_kwargs):
+        raise RuntimeError("los tests no deben hacer descargas reales")
+
+    monkeypatch.setattr(urllib.request, "urlopen", bloqueado)
+
+
+@pytest.fixture(autouse=True)
 def limpiar_base():
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{BACKEND_DIRECTORY / 'data' / 'zona_pintada.db'}"
     public_base_url: str = "http://localhost:8000"
 
-    jwt_secret: str = "cambiar-esta-clave-en-produccion"
+    jwt_secret: str = "cambiar-esta-clave-en-produccion"  # en vercel se pisa con JWT_SECRET
     jwt_expiration_minutes: int = 60 * 12
 
     admin_email: str = "admin@zonapintada.uy"
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     free_shipping_threshold_cents: int = 600000
     flat_shipping_cents: int = 29000
     max_units_per_line: int = 10
+    reservation_minutes: int = 30  # cuanto tiempo se guarda el stock mientras alguien paga
 
     frontend_directory: Path = PROJECT_DIRECTORY / "frontend" / "dist"
 

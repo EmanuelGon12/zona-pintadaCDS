@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from app.models import CartItem, Order, OrderItem, Product, ahora_utc
 from app.schemas import CartLineOut, CartOut, OrderItemOut, OrderOut, ProductOut
@@ -44,24 +44,27 @@ def presentar_producto(product: Product) -> ProductOut:
     )
 
 
-def problema_del_item(item: CartItem) -> Optional[str]:
+def problema_del_item(item: CartItem, reservado_por_el_usuario: int = 0) -> Optional[str]:
     product = item.product
+    # lo que el mismo usuario tiene reservado en un pago sin terminar cuenta como disponible para el
+    disponible = product.stock + reservado_por_el_usuario
     if not product.is_active:
         return "Este producto ya no está disponible."
     if item.size not in product.available_sizes:
         return "La talla elegida ya no está disponible."
-    if product.stock <= 0:
+    if disponible <= 0:
         return "Sin stock."
-    if item.quantity > product.stock:
-        return f"Solo quedan {product.stock} unidades."
+    if item.quantity > disponible:
+        return f"Solo quedan {disponible} unidades."
     return None
 
 
-def presentar_carrito(items: List[CartItem]) -> CartOut:
+def presentar_carrito(items: List[CartItem], reservas: Optional[Dict[int, int]] = None) -> CartOut:
     settings = obtener_config()
+    reservas = reservas or {}
     lines = []
     for item in items:
-        problem = problema_del_item(item)
+        problem = problema_del_item(item, reservas.get(item.product_id, 0))
         lines.append(
             CartLineOut(
                 id=item.id,

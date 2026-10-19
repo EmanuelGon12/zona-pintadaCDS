@@ -1,6 +1,6 @@
 from typing import List
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
@@ -15,7 +15,13 @@ router = APIRouter(prefix="/api/orders", tags=["Órdenes"])
 
 @router.get("", response_model=List[OrderOut])
 def listar_mis_ordenes(user: User = Depends(usuario_actual), database: Session = Depends(obtener_sesion_db)):
-    statement = select(Order).where(Order.user_id == user.id).order_by(Order.created_at.desc(), Order.id.desc())
+    # selectinload para traer los items de todas las ordenes en una sola consulta
+    statement = (
+        select(Order)
+        .where(Order.user_id == user.id)
+        .options(selectinload(Order.items))
+        .order_by(Order.created_at.desc(), Order.id.desc())
+    )
     return [presentar_orden(order) for order in database.scalars(statement)]
 
 

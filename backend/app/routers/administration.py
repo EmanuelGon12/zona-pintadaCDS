@@ -24,7 +24,7 @@ def obtener_producto_o_404(database: Session, product_id: int) -> Product:
 
 @router.get("/products", response_model=List[ProductOut])
 def listar_todos_los_productos(database: Session = Depends(obtener_sesion_db)):
-    statement = select(Product).order_by(Product.id.desc())
+    statement = select(Product).order_by(Product.id.desc())  # el admin ve tambien los ocultos
     return [presentar_producto(product) for product in database.scalars(statement)]
 
 

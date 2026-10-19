@@ -8,16 +8,70 @@ from app.config import obtener_config
 from app.database import Base, engine
 from app.routers import administration, authentication, cart, catalog, checkout, orders
 
+CLAVE_JWT_POR_DEFECTO = "cambiar-esta-clave-en-produccion"
+
 FIELD_LABELS = {
     "email": "Email",
     "full_name": "Nombre",
     "password": "Contraseña",
     "name": "Nombre",
+    "colorway": "Color",
+    "description": "Descripción",
     "price_cents": "Precio",
     "stock": "Stock",
     "available_sizes": "Tallas",
+    "play_style": "Estilo de juego",
+    "estilo": "Estilo de juego",
+    "surface": "Superficie",
+    "superficie": "Superficie",
     "quantity": "Cantidad",
+    "size": "Talla",
+    "product_id": "Producto",
+    "order_id": "Pedido",
+    "item_id": "Producto",
+    "card_number": "Número de tarjeta",
+    "image": "Imagen",
+    "orden": "Orden",
+    "limite": "Límite",
+    "q": "Búsqueda",
 }
+
+# pydantic responde en ingles, esto lo pasa a algo que se pueda mostrar en la tienda
+MENSAJES_POR_TIPO = {
+    "missing": "es obligatorio",
+    "string_too_short": "debe tener al menos {min_length} caracteres",
+    "string_too_long": "puede tener hasta {max_length} caracteres",
+    "too_short": "debe tener al menos {min_length} elemento(s)",
+    "too_long": "puede tener hasta {max_length} elementos",
+    "greater_than": "debe ser mayor que {gt}",
+    "greater_than_equal": "debe ser mayor o igual a {ge}",
+    "less_than": "debe ser menor que {lt}",
+    "less_than_equal": "debe ser menor o igual a {le}",
+    "int_parsing": "debe ser un número entero",
+    "int_type": "debe ser un número entero",
+    "int_from_float": "debe ser un número entero",
+    "string_type": "debe ser un texto",
+    "bool_parsing": "debe ser verdadero o falso",
+    "bool_type": "debe ser verdadero o falso",
+    "enum": "no es una opción válida",
+    "list_type": "debe ser una lista",
+}
+
+
+def traducir_error(error: dict) -> str:
+    if error["type"] == "json_invalid":
+        return "Los datos enviados no son un JSON válido."
+    campo = str(error["loc"][-1])
+    etiqueta = FIELD_LABELS.get(campo, campo)
+    if campo == "email" and error["type"] == "value_error":
+        return "Email: no es una dirección válida."
+    if error["type"] == "value_error":
+        # nuestros propios validadores, el mensaje viene como "Value error, <mensaje>"
+        mensaje = str(error.get("ctx", {}).get("error") or error["msg"])
+    else:
+        plantilla = MENSAJES_POR_TIPO.get(error["type"])
+        mensaje = plantilla.format(**error.get("ctx", {})) if plantilla else "no es válido"
+    return f"{etiqueta}: {mensaje}"
 
 
 # sirve el build de react. Si la ruta no es un archivo (ej /modelos) devuelve el index.html
@@ -36,19 +90,25 @@ class SinglePageApplication(StaticFiles):
 
 def crear_aplicacion() -> FastAPI:
     settings = obtener_config()
+    # en produccion (https) no arrancamos con la clave de ejemplo, cualquiera podria firmar tokens de admin
+    if settings.public_base_url.startswith("https://") and settings.jwt_secret == CLAVE_JWT_POR_DEFECTO:
+        raise RuntimeError("Falta configurar JWT_SECRET para producción")
+
     Base.metadata.create_all(engine)
     application = FastAPI(title="Zona Pintada API", version="1.0.0")
+
+    @application.middleware("http")
+    async def cabeceras_de_seguridad(request: Request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        return response
 
     @application.exception_handler(RequestValidationError)
     async def explicar_error_validacion(_request: Request, error: RequestValidationError):
         # pydantic devuelve una lista enorme, me quedo con el primer error y lo armo legible
-        first_error = error.errors()[0]
-        field_name = str(first_error["loc"][-1])
-        label = FIELD_LABELS.get(field_name, field_name)
-        return JSONResponse(
-            status_code=422,
-            content={"detail": f"{label}: {first_error['msg']}"},
-        )
+        return JSONResponse(status_code=422, content={"detail": traducir_error(error.errors()[0])})
 
     for module in (authentication, catalog, cart, checkout, orders, administration):
         application.include_router(module.router)
