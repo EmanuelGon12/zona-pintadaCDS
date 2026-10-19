@@ -15,6 +15,24 @@ from app.routers import administration, authentication, cart, catalog, checkout,
 
 CLAVE_JWT_POR_DEFECTO = "cambiar-esta-clave-en-produccion"
 
+DESCRIPCION_API = """
+API de la tienda de calzado de básquetbol Zona Pintada. Precios en centavos de peso uruguayo.
+
+**Sesión:** el login deja una cookie `HttpOnly`, así que desde esta misma página alcanza con
+llamar a `POST /api/auth/login` y después probar el resto. Otros clientes pueden usar el
+token del login con el botón **Authorize** (`Authorization: Bearer`).
+"""
+
+GRUPOS_API = [
+    {"name": "Autenticación", "description": "Registro, login con límite de intentos, logout y usuario actual."},
+    {"name": "Catálogo", "description": "Productos visibles, búsqueda, filtros y recomendaciones por estilo de juego."},
+    {"name": "Carrito", "description": "Carrito del usuario. Los totales y el envío se calculan acá, no en el frontend."},
+    {"name": "Checkout", "description": "Inicio del pago con Mercado Pago (o el simulador), confirmación y webhook."},
+    {"name": "Órdenes", "description": "Historial y detalle de las órdenes propias."},
+    {"name": "Administración", "description": "Solo rol ADMIN: alta y edición de productos y subida de imágenes."},
+    {"name": "Salud", "description": "Estado de la API y de la base, para monitoreo."},
+]
+
 FIELD_LABELS = {
     "email": "Email",
     "full_name": "Nombre",
@@ -104,7 +122,16 @@ def crear_aplicacion() -> FastAPI:
 
     # el esquema de la base lo manejan las migraciones de alembic (alembic upgrade head), no la app
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-    application = FastAPI(title="Zona Pintada API", version="1.0.0")
+    # la documentacion va bajo /api para que en vercel tambien llegue al backend (el resto lo sirve el frontend)
+    application = FastAPI(
+        title="Zona Pintada API",
+        version="1.0.0",
+        description=DESCRIPCION_API,
+        openapi_tags=GRUPOS_API,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
+    )
 
     @application.get("/api/health", tags=["Salud"])
     def salud(database: Session = Depends(obtener_sesion_db)):

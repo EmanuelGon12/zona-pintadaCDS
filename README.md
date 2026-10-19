@@ -58,7 +58,7 @@ npm run dev
 ```
 
 Abrir <http://localhost:5173>. Vite redirige `/api` y `/media` al backend en el puerto 8000 (se cambia con la
-variable `BACKEND_URL`). La documentación interactiva de la API está en <http://localhost:8000/docs>.
+variable `BACKEND_URL`). La documentación interactiva de la API (Swagger) está en <http://localhost:8000/api/docs>.
 
 Para probar la versión compilada con un solo proceso, ejecutar `npm run build` en `frontend/`: el backend sirve
 `frontend/dist` y responde con la aplicación en cualquier ruta que no sea de la API.

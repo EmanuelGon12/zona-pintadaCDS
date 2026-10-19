@@ -114,3 +114,12 @@ def test_rutas_de_api_inexistentes_dan_404_con_cualquier_metodo(api, tmp_path):
     assert cliente.get("/api/no-existe").status_code == 404
     # y las rutas del frontend siguen devolviendo la app
     assert cliente.get("/modelos").text == "<html>tienda</html>"
+
+
+def test_la_documentacion_de_la_api_esta_bajo_api(api):
+    # en vercel solo /api/* llega al backend, asi que la doc tiene que vivir ahi
+    assert api.get("/api/docs").status_code == 200
+    esquema = api.get("/api/openapi.json").json()
+    assert esquema["info"]["title"] == "Zona Pintada API"
+    assert "/api/checkout/webhook/mercadopago" in esquema["paths"]
+    assert {grupo["name"] for grupo in esquema["tags"]} >= {"Catálogo", "Checkout", "Administración"}
